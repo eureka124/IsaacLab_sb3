@@ -32,6 +32,7 @@ class TutorialEnv(DirectRLEnv):
 
     def _setup_scene(self):
         self.robot = Articulation(self.cfg.robot_cfg)
+        self.robot1 = self.scene["robot1_cfg"]
         # add ground plane
         spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg())
         # clone and replicate
@@ -49,19 +50,21 @@ class TutorialEnv(DirectRLEnv):
         self.actions = actions.clone()
 
     def _apply_action(self) -> None:
-        self.robot.set_joint_effort_target(self.actions * self.cfg.action_scale, joint_ids=self._cart_dof_idx)
+        now_v = torch.zeros((self.num_envs, 6), device=self.device)
+        now_v[:, 0:2] = self.actions
+
+        self.target_z=2
+        now_pos=self.robot1.data.root_pos_w.clone()
+        now_z=now_pos[:,2]
+        error_z=self.target_z-now_z
+        linel_v_z = now_v[:, 2]  # 形状 (num_envs,1)
+        linel_v_z.copy_(error_z+0.1)  #
+
+        self.robot1.write_root_velocity_to_sim(now_v, env_ids=None)
 
     def _get_observations(self) -> dict:
-        obs = torch.cat(
-            (
-                self.joint_pos[:, self._pole_dof_idx[0]].unsqueeze(dim=1),
-                self.joint_vel[:, self._pole_dof_idx[0]].unsqueeze(dim=1),
-                self.joint_pos[:, self._cart_dof_idx[0]].unsqueeze(dim=1),
-                self.joint_vel[:, self._cart_dof_idx[0]].unsqueeze(dim=1),
-            ),
-            dim=-1,
-        )
-        observations = {"policy": obs}
+        obs1 = self.robot1.data.root_state_w[:, :3]
+        observations = {"policy": obs1}
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
@@ -86,7 +89,7 @@ class TutorialEnv(DirectRLEnv):
         time_out = self.episode_length_buf >= self.max_episode_length - 1
         out_of_bounds = torch.any(torch.abs(self.joint_pos[:, self._cart_dof_idx]) > self.cfg.max_cart_pos, dim=1)
         out_of_bounds = out_of_bounds | torch.any(torch.abs(self.joint_pos[:, self._pole_dof_idx]) > math.pi / 2, dim=1)
-        return out_of_bounds, time_out
+        return out_of_bounds, time_out 
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None:
