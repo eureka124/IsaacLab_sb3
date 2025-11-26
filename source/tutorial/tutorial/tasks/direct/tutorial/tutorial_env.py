@@ -8,12 +8,14 @@ from __future__ import annotations
 import math
 import torch
 from collections.abc import Sequence
+import collections
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from isaaclab.utils.math import sample_uniform
+from torch import Tensor
 
 from .tutorial_env_cfg import TutorialEnvCfg
 from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
@@ -32,6 +34,8 @@ class TutorialEnv(DirectRLEnv):
         # 目标位置可视化
         marker_cfg.prim_path = "/Visuals/Command/goal_position"
         self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
+        print(self.device)
+        self.image_buffers = ImageBuffers(self.cfg.scene.num_envs, (16,16,1), 49, device="cpu")
 
     def _setup_scene(self):
         self.robot1 = self.scene["robot1_cfg"]
@@ -62,7 +66,30 @@ class TutorialEnv(DirectRLEnv):
 
         self.robot1.write_root_velocity_to_sim(now_v, env_ids=None)
 
+    def _get_norm_depth_frame(self) -> torch.Tensor:
+        depth_frame = (
+            self.scene["camera"].data.output["distance_to_image_plane"].clone()
+        )
+
+        # 归一化深度图
+        depth_frame = torch.nan_to_num(
+            depth_frame,
+            nan=0.0,
+            posinf=10,  # depth_frame[depth_frame != float('inf')].max(),
+            neginf=0,  # depth_frame.min()
+        )
+        self.depth_image_for_reward = depth_frame
+
+        max_vals = 2  # 相机最远探测距离m
+        depth_frame[depth_frame >= max_vals] = max_vals
+        depth_norm = depth_frame / (max_vals + 1e-8)  # +1e-8防止除零
+        return depth_norm
+
     def _get_observations(self) -> dict:
+        depth_norm = self._get_norm_depth_frame()  #
+        for env_id in range(self.cfg.scene.num_envs):
+            self.image_buffers.update_buffer(env_id,depth_norm[env_id])
+
         obs1 = self.robot1.data.root_state_w[:, :2]
         obs2 = self.target_pos[:, :2]
         observations = {"policy": torch.cat((obs1, obs2), dim=-1)}
@@ -77,9 +104,8 @@ class TutorialEnv(DirectRLEnv):
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         time_out = self.episode_length_buf >= self.max_episode_length - 1
-        out_of_bounds = time_out
 
-        return out_of_bounds, time_out
+        return time_out, time_out
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None:
@@ -110,10 +136,10 @@ class TutorialEnv(DirectRLEnv):
         xyz_indes = 0
         for i in range(0, self.cfg.scene.num_envs):
             if i in env_ids:
-                result.append(xyz[xyz_indes : xyz_indes + 1, :])
+                result.append(xyz[xyz_indes: xyz_indes + 1, :])
                 xyz_indes += 1
             else:
-                result.append(self.target_pos[i : i + 1, :])
+                result.append(self.target_pos[i: i + 1, :])
 
         self.target_pos = torch.cat(result, dim=0) + self.scene.env_origins
         # create markers if necessary for the first time
@@ -132,3 +158,113 @@ def compute_rewards(
     arrived = (distance <= 0.05).squeeze(dim=-1)
     total_reward = -torch.linalg.norm(robot_pos - target_pos, dim=-1) + arrived * 5.0
     return total_reward
+
+
+class ImageBuffers:
+    def __init__(self, env_num: int, image_shape: tuple, buffer_size: int, device: str="cpu"):
+        """
+        多环境图像缓冲区管理器
+
+        Args:
+            env_num: 环境数量
+            image_shape: 单张图像形状 (height, width, channels)
+            buffer_size: 每个环境的缓冲区大小
+            device: 设备
+        """
+        self.env_num = env_num
+        self.image_shape = image_shape
+        self.buffer_size = buffer_size
+        self.device = device
+        self.buffers = [DepthImageBuffer(buffer_size=buffer_size, device=device) for _ in range(env_num)]
+        self.observations = torch.zeros(
+            (env_num, buffer_size, image_shape[0], image_shape[1]),
+            device=device
+        )
+
+    def update_buffer(self, env_id: int, depth_norm: torch.Tensor):
+        """更新指定环境的缓冲区"""
+        if env_id < len(self.buffers):
+            self.buffers[env_id].update_buffer(depth_norm)
+
+    def get_observations(self) -> torch.Tensor:
+        """获取所有环境的观察值"""
+        for env_id in range(self.env_num):
+            # 从每个缓冲区获取最新的组合张量
+            buffer_data = self.buffers[env_id].get_buffer_data()
+            if buffer_data is not None:
+                self.observations[env_id] = buffer_data
+        return self.observations
+
+    def reset(self, env_ids: Sequence[int]):
+        """重置指定环境的缓冲区"""
+        for env_id in env_ids:
+            if env_id < len(self.buffers):
+                self.buffers[env_id].reset()
+
+    def __getitem__(self, idx):
+        return self.buffers[idx]
+
+
+
+class DepthImageBuffer:
+    def __init__(self, buffer_size=3, image_shape=(16, 16, 1), device="cpu"):
+        """
+        单个环境的深度图缓冲区
+
+        Args:
+            buffer_size: 缓冲区大小（历史帧数）
+            image_shape: 图像形状 (height, width, channels)
+            device: 设备
+        """
+        self.buffer_size = buffer_size
+        self.image_shape = image_shape
+        self.device = device
+
+        # 初始化缓冲区：形状为 (buffer_size, height, width, channels)
+        self.buffer = torch.zeros(
+            (buffer_size, image_shape[0], image_shape[1], image_shape[2]),
+            device=device
+        )
+        self.buffer_ptr = 0  # 当前写入位置
+        self.valid_frames = 0  # 有效帧数
+
+    def update_buffer(self, depth_norm: torch.Tensor):
+        """
+        更新缓冲区
+
+        Args:
+            depth_norm: 归一化深度图，形状应为 (1, height, width, channels)
+        """
+        # 移除批次维度（如果存在）
+        if depth_norm.dim() == 4 and depth_norm.shape[0] == 1:
+            depth_norm = depth_norm.squeeze(0)  # 形状变为 (height, width, channels)
+
+        # 使用 torch.roll 实现环形缓冲区
+        if self.valid_frames < self.buffer_size:
+            # 缓冲区未满，直接写入
+            self.buffer[self.buffer_ptr] = depth_norm
+            self.valid_frames += 1
+        else:
+            # 缓冲区已满，滚动并替换最旧数据
+            self.buffer = torch.roll(self.buffer, shifts=-1, dims=0)
+            self.buffer[-1] = depth_norm
+
+        self.buffer_ptr = (self.buffer_ptr + 1) % self.buffer_size
+
+    def get_buffer_data(self) -> Tensor | None:
+        """获取缓冲区数据，形状为 (height, width, buffer_size)"""
+        if self.valid_frames == 0:
+            return None
+
+        # 将缓冲区从 (buffer_size, h, w, c) 转换为 (h, w, buffer_size)
+        # 假设每个通道是单通道图像 (c=1)
+        buffer_data = self.buffer.permute(1, 2, 0, 3)  # (h, w, buffer_size, c)
+        buffer_data = buffer_data.squeeze(-1)  # 移除通道维度 -> (h, w, buffer_size)
+
+        return buffer_data
+
+    def reset(self):
+        """重置缓冲区"""
+        self.buffer.zero_()
+        self.buffer_ptr = 0
+        self.valid_frames = 0
