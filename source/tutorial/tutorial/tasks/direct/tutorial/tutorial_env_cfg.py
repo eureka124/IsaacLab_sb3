@@ -6,21 +6,21 @@
 from isaaclab_assets.robots.cartpole import CARTPOLE_CFG
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg
+from isaaclab.sensors import CameraCfg
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 from isaaclab_assets import CRAZYFLIE_CFG  # isort: skip
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
-from isaaclab.sensors import CameraCfg
 import numpy as np
 from gymnasium import spaces
 
 @configclass
 class MysceneCfg(InteractiveSceneCfg):
-    robot1_cfg: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot1")
+    robot_cfg: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     camera = CameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot1/body/front_cam",
+        prim_path="{ENV_REGEX_NS}/Robot/body/front_cam",
         update_period=0.04,
         height=16,
         width=16,
@@ -35,7 +35,6 @@ class MysceneCfg(InteractiveSceneCfg):
             pos=(0.1, 0.0, 0.0), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"
         ),
     )
-
 
 @configclass
 class TutorialEnvCfg(DirectRLEnvCfg):
@@ -59,7 +58,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     robot_cfg: ArticulationCfg = CARTPOLE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
     # scene
-    scene: InteractiveSceneCfg = MysceneCfg(num_envs=16, env_spacing=2.0, replicate_physics=True)
+    scene: InteractiveSceneCfg = MysceneCfg(num_envs=8, env_spacing=2.0, replicate_physics=True)
 
 
     # # custom parameters/scales
