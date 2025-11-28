@@ -53,7 +53,7 @@ class TutorialEnv(DirectRLEnv):
 
     def _apply_action(self) -> None:
         now_v = torch.zeros((self.num_envs, 6), device=self.device)
-        now_v[:, 0:2] = self.actions
+        now_v[:, 0:2] = self.actions  # vx, vy
 
         self.target_z = 2
         now_pos = self.robot.data.root_pos_w.clone()
@@ -81,17 +81,22 @@ class TutorialEnv(DirectRLEnv):
 
     def _get_observations(self) -> dict:
         depth_norm = self.get_norm_depth_image()
-        camera_observation = torch.zeros((self.cfg.scene.num_envs, 3, 16, 16))  # shape=[num_envs, 3, 16, 16]
+        camera_observation = torch.zeros((self.cfg.scene.num_envs, 3, 16, 16), device=self.device)  # shape=[num_envs, 3, 16, 16]
         for env in range(self.cfg.scene.num_envs):
             camera_observation[env] = self.img_buffers[env].update_buffer(depth_norm[env])
             # print(depth_norm[env].shape, camera_observation[env].shape)# (3, 16, 16)
+        # print(camera_observation)
 
-        obs1 = self.robot.data.root_state_w[:, :2]
-        obs2 = self.target_pos[:, :2]
+        robot_state = self.robot.data.root_state_w[:, :2]
+        # obs2 = self.target_pos[:, :2]
 
-        observations = {"robot-state": torch.cat((obs1, obs2), dim=-1),
-                        "camera": camera_observation
-                        }
+        observations = {
+            "policy":
+            {
+                "robot-state": robot_state,
+                "camera": camera_observation
+            }
+        }
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
@@ -99,6 +104,7 @@ class TutorialEnv(DirectRLEnv):
             self.robot.data.root_pos_w[:, :2],
             self.target_pos[:, :2]
         )
+        # print(self.robot.data)
         return total_reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -168,11 +174,11 @@ class DepthImageBuffer:
             buffer_size: 缓冲区大小，默认为49
         """
         self.buffer_size = buffer_size
-        self.buffer = None  # 用于存储所有深度图的张量
+        self.buffer: None | torch.Tensor = None  # 用于存储所有深度图的张量
         self.current_size = 0  # 当前缓冲区中的图像数量
         self.buffer_full = False  # 缓冲区是否已满
 
-    def update_buffer(self, depth_norm):
+    def update_buffer(self, depth_norm: torch.Tensor) -> torch.Tensor:
         """
         使用torch.roll优化缓冲区更新
         Args:
@@ -219,7 +225,7 @@ class DepthImageBuffer:
 
         return combined_tensor
 
-    def get_buffer_state(self):
+    def get_buffer_state(self) -> dict:
         """获取缓冲区状态信息"""
         return {
             "buffer_shape": self.buffer.shape if self.buffer is not None else None,
@@ -229,7 +235,7 @@ class DepthImageBuffer:
 
     def clear_buffer(self):
         """
-        清空缓冲区，移除所有存储的深度图[6,8](@ref)
+        清空缓冲区，移除所有存储的深度图
         """
         self.buffer.clear()
 

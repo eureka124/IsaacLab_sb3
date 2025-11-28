@@ -17,7 +17,7 @@ import numpy as np
 from gymnasium import spaces
 
 @configclass
-class MysceneCfg(InteractiveSceneCfg):
+class MySceneCfg(InteractiveSceneCfg):
     robot_cfg: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     camera = CameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/body/front_cam",
@@ -36,6 +36,7 @@ class MysceneCfg(InteractiveSceneCfg):
         ),
     )
 
+
 @configclass
 class TutorialEnvCfg(DirectRLEnvCfg):
     # env
@@ -48,7 +49,8 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     decimation = 2
     episode_length_s = 5.0
     # - spaces definition
-    observation_space = {"camera": [3, 16, 16], "robot-state": 4}
+    # observation_space = 4
+    observation_space = {"camera": [3, 16, 16], "robot-state": 2}
     state_space = 0
 
     # simulation
@@ -58,7 +60,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     robot_cfg: ArticulationCfg = CARTPOLE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
     # scene
-    scene: InteractiveSceneCfg = MysceneCfg(num_envs=8, env_spacing=2.0, replicate_physics=True)
+    scene: InteractiveSceneCfg = MySceneCfg(num_envs=8, env_spacing=2.0, replicate_physics=True)
 
 
     # # custom parameters/scales

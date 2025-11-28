@@ -1,6 +1,6 @@
 seed: 42
 models:
-  separate: false
+  separate: False
   policy:
     class: GaussianMixin
     clip_actions: False
@@ -10,7 +10,7 @@ models:
     initial_log_std: 0.0
     network:
     - name: features_extractor
-      input: permute(STATES["camera"], (0, 3, 1, 2))
+      input: STATES["camera"]
       layers:
       - conv2d:
           out_channels: 16
@@ -19,8 +19,8 @@ models:
           padding: 0
       - conv2d:
           out_channels: 32
-          kernel_size: 4
-          stride: 4
+          kernel_size: 3
+          stride: 1
           padding: 0
       - flatten
       activations: leaky_relu
@@ -33,10 +33,10 @@ models:
     output: ACTIONS
   value:
     class: DeterministicMixin
-    clip_actions: false
+    clip_actions: False
     network:
     - name: features_extractor
-      input: permute(STATES["camera"], (0, 3, 1, 2))
+      input: STATES["camera"]
       layers:
       - conv2d:
           out_channels: 16
