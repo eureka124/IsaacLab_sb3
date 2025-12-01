@@ -62,7 +62,9 @@ obstacle_positions = [
     (0.8, -0.5, 1.5),
     (-0.2, 0.6, 1.5),
     (0.5, 0.8, 1.5),
-    (-0.6, -0.4, 1.5)
+    (-0.6, -0.4, 1.5),
+    (-0.3, -0.7, 1.5),
+    (0.0, 0.5, 1.5),
 ]
 
 # 循环创建并添加障碍物配置到 MySceneCfg
@@ -101,5 +103,5 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
 
     # scene
-    scene: InteractiveSceneCfg = MySceneCfg(num_envs=64, env_spacing=2.0, replicate_physics=True)
+    scene: InteractiveSceneCfg = MySceneCfg(num_envs=4, env_spacing=2.0, replicate_physics=True)
     # static_obstacle: StaticObstacle = StaticObstacle()

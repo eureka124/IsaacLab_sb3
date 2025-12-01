@@ -125,7 +125,7 @@ class TutorialEnv(DirectRLEnv):
         )
         self.distances = distances.squeeze(dim=1)  # (num_envs,)
 
-        arrived = (distances <= 0.05).squeeze(dim=1)
+        arrived = (distances <= 0.1).squeeze(dim=1)
         self.arrived = arrived
 
         # 判断是否碰撞
