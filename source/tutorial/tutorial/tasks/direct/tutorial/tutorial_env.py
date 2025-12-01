@@ -16,6 +16,8 @@ from isaaclab.utils.math import sample_uniform
 from .tutorial_env_cfg import TutorialEnvCfg
 from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
 from isaaclab.markers import VisualizationMarkers
+from isaaclab.assets import RigidObject, RigidObjectCfg
+from random import gauss
 
 
 class TutorialEnv(DirectRLEnv):
@@ -44,6 +46,43 @@ class TutorialEnv(DirectRLEnv):
         # 添加环境光
         light_cfg = sim_utils.DomeLightCfg(intensity=4000.0, color=(1.0, 1.0, 0.75))
         light_cfg.func("/World/Light", light_cfg)
+
+        # 可动障碍物的定义 (优化后)
+        # 随机生成障碍物位置
+        obstacle_params = []
+        for _ in range(8):
+            while True:
+                # 随机生成 x, y 坐标，范围在 -1.0 到 1.0 之间
+                x = torch.rand(1).item() * 2.0 - 1.0
+                y = torch.rand(1).item() * 2.0 - 1.0
+                # 简单的避障：避免在原点(0,0)附近生成，防止与机器人重叠 (半径 > 0.1m)
+                if x**2 + y**2 > 0.01:
+                    break
+            z = 1.5  # 固定高度
+            obstacle_params.append((x, y, z))
+
+        for i, pos in enumerate(obstacle_params):
+            # 创建配置
+            obstacle_cfg = RigidObjectCfg(
+                prim_path=f"/World/move_obstacle/Move_Obstacle_{i}",
+                spawn=sim_utils.CylinderCfg(
+                    radius=gauss(0.1, 0.05),
+                    height=3.0,
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+                    collision_props=sim_utils.CollisionPropertiesCfg(),
+                    # visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0), metallic=0.2),
+                ),
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=pos,
+                ),
+            )
+            
+            # 实例化对象
+            obstacle_obj = RigidObject(cfg=obstacle_cfg)
+            
+            # 动态设置类属性，相当于 self.Move_Obstacle_0 = ...
+            setattr(self, f"Move_Obstacle_{i}", obstacle_obj)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.actions = actions.clone()
@@ -130,6 +169,7 @@ class TutorialEnv(DirectRLEnv):
 
         # 判断是否碰撞
         contact_forces = self.scene["contact_forces"].data.net_forces_w  # shape: (num_envs, num_sensors, 3)
+        # print("Contact forces:", contact_forces)
         contact_magnitudes = torch.norm(contact_forces, dim=-1)  # shape: (num_envs, num_sensors)
         # print("Contact magnitudes:", contact_magnitudes)
         collided = (contact_magnitudes > 0.01).any(dim=1)  # shape: (num_envs,)
@@ -291,8 +331,6 @@ def compute_rewards(
     arrived: torch.Tensor,
     collided: torch.Tensor,
 ):
-    # 确保所有输入都是 (N,) 或 (N, 1) 且一致，这里假设输入已经被 squeeze 为 (N,)
-    # 如果需要返回 (N, 1) 给 RL 算法，可以在最后 unsqueeze
     total_reward = -distance + arrived.float() * 5.0 - collided.float() * 5.0
     return total_reward.unsqueeze(-1)  # 返回 (num_envs, 1) 通常更安全
 
