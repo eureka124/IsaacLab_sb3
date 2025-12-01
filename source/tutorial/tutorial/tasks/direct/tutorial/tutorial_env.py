@@ -137,14 +137,14 @@ class TutorialEnv(DirectRLEnv):
         reset_envs = arrived | collided
 
         return reset_envs, time_out
-  
+
     def _reset_idx(self, env_ids):
         if env_ids is None:
             env_ids = self.robot._ALL_INDICES
         super()._reset_idx(env_ids)
 
         default_root_state = self.robot.data.default_root_state[env_ids]
-        print("Resetting envs:", env_ids)
+        # print("Resetting envs:", env_ids)
         # 将重置的环境位置偏移到对应环境的原点位置
         default_root_state[:, :3] += self.scene.env_origins[env_ids]
 
@@ -178,7 +178,7 @@ class TutorialEnv(DirectRLEnv):
         )  # shape: (num_reset_envs,)
         # 将yaw角度转换为四元数
         target_quat = yaw_to_quaternion(target_yaw)  # shape: (num_reset_envs, 4)
-        print("Target yaw angles for reset envs:", target_yaw)
+        # print("Target yaw angles for reset envs:", target_yaw)
         # 设置机器人朝向目标点
         default_root_state[:, 3:7] = target_quat
 

@@ -91,10 +91,10 @@ agent:
   experiment:
     directory: "quad"
     experiment_name: ""
-    write_interval: auto
+    write_interval: 500
     checkpoint_interval: auto
 trainer:
   class: SequentialTrainer
-  timesteps: 200000
+  timesteps: 20000
   environment_info: log
   close_environment_at_exit: false

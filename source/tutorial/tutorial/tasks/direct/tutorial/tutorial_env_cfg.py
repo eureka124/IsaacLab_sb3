@@ -21,6 +21,8 @@ from random import gauss, seed
 
 
 seed(42)
+
+
 @configclass
 class MySceneCfg(InteractiveSceneCfg):
     # 无人机模型
@@ -64,19 +66,19 @@ obstacle_positions = [
 ]
 
 # 循环创建并添加障碍物配置到 MySceneCfg
-# for i, pos in enumerate(obstacle_positions):
-#     obstacle_cfg = RigidObjectCfg(
-#         prim_path=f"{{ENV_REGEX_NS}}/Obstacle_{i}",
-#         spawn=sim_utils.CylinderCfg(
-#             radius=gauss(0.1, 0.05),
-#             height=3,
-#             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-#             mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
-#             collision_props=sim_utils.CollisionPropertiesCfg(),
-#         ),
-#         init_state=RigidObjectCfg.InitialStateCfg(pos=pos),
-#     )
-#     setattr(MySceneCfg, f"Obstacle_{i}", obstacle_cfg)
+for i, pos in enumerate(obstacle_positions):
+    obstacle_cfg = RigidObjectCfg(
+        prim_path=f"{{ENV_REGEX_NS}}/Obstacle_{i}",
+        spawn=sim_utils.CylinderCfg(
+            radius=gauss(0.1, 0.05),
+            height=3,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=pos),
+    )
+    setattr(MySceneCfg, f"Obstacle_{i}", obstacle_cfg)
 
 
 @configclass
@@ -99,5 +101,5 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
 
     # scene
-    scene: InteractiveSceneCfg = MySceneCfg(num_envs=16, env_spacing=2.0, replicate_physics=True)
+    scene: InteractiveSceneCfg = MySceneCfg(num_envs=64, env_spacing=2.0, replicate_physics=True)
     # static_obstacle: StaticObstacle = StaticObstacle()
