@@ -20,9 +20,6 @@ import torch
 from random import gauss, seed
 
 
-seed(42)
-
-
 @configclass
 class MySceneCfg(InteractiveSceneCfg):
     # 无人机模型

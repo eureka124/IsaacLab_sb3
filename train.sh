@@ -5,5 +5,5 @@ source ~/miniconda3/etc/profile.d/conda.sh
 conda activate env_isaaclab
 
 # 然后执行你的命令
-python scripts/skrl/train.py --task Template-Tutorial-Direct-v0 --enable_cameras --headless
+python scripts/skrl/train.py --task Template-Tutorial-Direct-v0 --enable_cameras --headless --num_envs 80 
 
