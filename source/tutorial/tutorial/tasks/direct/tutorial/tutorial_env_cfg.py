@@ -31,8 +31,8 @@ class MySceneCfg(InteractiveSceneCfg):
     camera = CameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/body/front_cam",
         update_period=0.04,
-        height=16,
-        width=16,  # 深度相机的输出(16, 16)
+        height=32,
+        width=32,  # 深度相机的输出(32, 32)
         data_types=["distance_to_image_plane"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=10.4775,
