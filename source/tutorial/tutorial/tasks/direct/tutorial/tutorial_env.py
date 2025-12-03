@@ -151,7 +151,7 @@ class TutorialEnv(DirectRLEnv):
         direction_vector = direction_vector / torch.norm(
             direction_vector, dim=-1, keepdim=True
         )  # 归一化方向向量 (num_envs, 2)
-        linear_velocity = self.robot.data.root_velocity_w[:, 0:2]  # 线速度 (num_envs, 2) [vx, vy]
+        linear_velocity = self.robot.data.default_root_state[:, 7:9]  # 线速度 (num_envs, 2) [vx, vy]
         reward_velocity = torch.sum(linear_velocity * direction_vector, dim=1)  # 速度奖励 (num_envs,)
 
         # 计算动作平滑惩罚
@@ -165,6 +165,7 @@ class TutorialEnv(DirectRLEnv):
             reward_velocity,
             self.collided,
             penalty_smooth,
+            self.arrived,
         )  # print(self.robot.data)
         return total_reward
 
@@ -356,10 +357,11 @@ class DepthImageBuffer:
 @torch.jit.script
 def compute_rewards(
     reward_velocity: torch.Tensor,
-    collided,
+    collided: torch.Tensor,
     penalty_smooth: torch.Tensor,
+    arrived: torch.Tensor,
 ):
-    total_reward = reward_velocity + 1.0 - penalty_smooth * 0.1 - collided * 5.0
+    total_reward = reward_velocity + 1.0 - penalty_smooth * 0.1 - collided * 5.0 + arrived * 10.0
     return total_reward.unsqueeze(-1)  # 返回 (num_envs, 1) 通常更安全
 
 

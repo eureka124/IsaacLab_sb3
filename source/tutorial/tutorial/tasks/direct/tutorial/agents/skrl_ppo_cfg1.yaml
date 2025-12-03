@@ -95,6 +95,6 @@ agent:
     checkpoint_interval: auto
 trainer:
   class: SequentialTrainer
-  timesteps: 20000
+  timesteps: 40000
   environment_info: log
   close_environment_at_exit: false
