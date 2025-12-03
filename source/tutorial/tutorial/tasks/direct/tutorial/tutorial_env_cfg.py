@@ -91,7 +91,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     episode_length_s = 5.0
     # - spaces definition
     # observation_space = 4
-    observation_space = {"camera": [3, 16, 16], "relative-position": 2}
+    observation_space = {"camera": [3, 16, 16], "robot-state": 4}
     state_space = 0
 
     # simulation

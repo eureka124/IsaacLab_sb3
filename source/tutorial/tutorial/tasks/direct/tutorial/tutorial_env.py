@@ -20,6 +20,8 @@ from isaaclab.assets import RigidObject, RigidObjectCfg
 from random import gauss
 
 
+# 
+
 class TutorialEnv(DirectRLEnv):
     cfg: TutorialEnvCfg
 
@@ -126,21 +128,43 @@ class TutorialEnv(DirectRLEnv):
 
         robot_pos = self.robot.data.root_state_w[:, :2]  # 位置(x,y)
         relative_position = self.target_pos[:, :2] - robot_pos  # 目标位置相对于机器人的位置差 (num_envs, 2)
+        # 归一化
+        relative_position /= torch.norm(relative_position, dim=-1, keepdim=True) + 1e-8
+        last_action = self.actions
+        obs = torch.cat((relative_position, last_action), dim=-1)  # shape: (num_envs, 4)
 
         observations = {
             "policy":
             {
-                "relative-position": relative_position,
+                "robot-state": obs,
                 "camera": camera_observation
             }
         }
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
+        ## 计算速度奖励(线速度在目标方向的分量)
+        # 获取目标位置和机器人位置，计算方向向量
+        target_pos = self.target_pos[:, :2]  # 目标位置 (num_envs, 2)
+        robot_pos = self.robot.data.root_pos_w[:, :2]  # 机器人位置 (num_envs, 2)
+        direction_vector = target_pos - robot_pos  # 目标点相对机器人的位置 (num_envs, 2)
+        direction_vector = direction_vector / torch.norm(
+            direction_vector, dim=-1, keepdim=True
+        )  # 归一化方向向量 (num_envs, 2)
+        linear_velocity = self.robot.data.root_velocity_w[:, 0:2]  # 线速度 (num_envs, 2) [vx, vy]
+        reward_velocity = torch.sum(linear_velocity * direction_vector, dim=1)  # 速度奖励 (num_envs,)
+
+        # 计算动作平滑惩罚
+        if not hasattr(self, 'prev_actions'):
+            self.prev_actions = torch.zeros_like(self.actions)
+        action_diff = self.actions - self.prev_actions  # 动作变化 (num_envs    , 2)
+        penalty_smooth = torch.norm(action_diff, p=2, dim=1)  # 平滑惩罚 (num_envs,)
+        self.prev_actions = self.actions.clone()  # 更新前一动作
+
         total_reward = compute_rewards(
-            self.distances,
-            self.arrived,
+            reward_velocity,
             self.collided,
+            penalty_smooth,
         )  # print(self.robot.data)
         return total_reward
 
@@ -211,7 +235,7 @@ class TutorialEnv(DirectRLEnv):
         # 1. xyz 是局部坐标，加上对应环境的原点坐标 (env_origins[env_ids]) 转换为全局坐标
         # 2. 直接使用索引 [env_ids] 更新 self.target_pos 中对应的行，未重置的环境保持不变
         self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
-        
+
         # 获取目标点相对机器人位置的yaw角度
         target_yaw = get_target_direction(
             self.target_pos[env_ids, :2], default_root_state[:, :2]
@@ -229,6 +253,10 @@ class TutorialEnv(DirectRLEnv):
         # set their visibility to true
         self.goal_pos_visualizer.set_visibility(True)
         self.goal_pos_visualizer.visualize(self.target_pos)
+
+        # 重置图像缓冲区
+        for env_id in env_ids:
+            self.img_buffers[env_id].clear_buffer()
 
 
 class DepthImageBuffer:
@@ -297,12 +325,12 @@ class DepthImageBuffer:
             "current_size": self.current_size,
             "buffer_full": self.buffer_full
         }
-
+    
     def clear_buffer(self):
-        """
-        清空缓冲区，移除所有存储的深度图
-        """
-        self.buffer.clear()
+        """清空缓冲区"""
+        self.buffer = None
+        self.current_size = 0
+        self.buffer_full = False
 
     def get_buffer_status(self):
         """获取缓冲区状态"""
@@ -327,14 +355,15 @@ class DepthImageBuffer:
 
 @torch.jit.script
 def compute_rewards(
-    distance: torch.Tensor,
-    arrived: torch.Tensor,
-    collided: torch.Tensor,
+    reward_velocity: torch.Tensor,
+    collided,
+    penalty_smooth: torch.Tensor,
 ):
-    total_reward = -distance + arrived.float() * 5.0 - collided.float() * 5.0
+    total_reward = reward_velocity + 1.0 - penalty_smooth * 0.1 - collided * 5.0
     return total_reward.unsqueeze(-1)  # 返回 (num_envs, 1) 通常更安全
 
 
+# 偏航角转换为四元数
 def yaw_to_quaternion(yaw: torch.Tensor) -> torch.Tensor:
     """
     将yaw角度转换为四元数表示
