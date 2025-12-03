@@ -50,7 +50,7 @@ class TutorialEnv(DirectRLEnv):
         # 可动障碍物的定义 (优化后)
         # 随机生成障碍物位置
         obstacle_params = []
-        for _ in range(8):
+        for _ in range(5):
             while True:
                 # 随机生成 x, y 坐标，范围在 -1.0 到 1.0 之间
                 x = torch.rand(1).item() * 2.0 - 1.0
@@ -66,7 +66,7 @@ class TutorialEnv(DirectRLEnv):
             obstacle_cfg = RigidObjectCfg(
                 prim_path=f"/World/move_obstacle/Move_Obstacle_{i}",
                 spawn=sim_utils.CylinderCfg(
-                    radius=gauss(0.1, 0.05),
+                    radius=gauss(0.1, 0.02),
                     height=3.0,
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
                     mass_props=sim_utils.MassPropertiesCfg(mass=1.0),

@@ -31,8 +31,8 @@ class MySceneCfg(InteractiveSceneCfg):
     camera = CameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/body/front_cam",
         update_period=0.04,
-        height=32,
-        width=32,  # 深度相机的输出(32, 32)
+        height=16,
+        width=16,  # 深度相机的输出(16, 16)
         data_types=["distance_to_image_plane"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=10.4775,
@@ -60,8 +60,6 @@ obstacle_positions = [
     (-0.2, 0.6, 1.5),
     (0.5, 0.8, 1.5),
     (-0.6, -0.4, 1.5),
-    (-0.3, -0.7, 1.5),
-    (0.0, 0.5, 1.5),
 ]
 
 # 循环创建并添加障碍物配置到 MySceneCfg
@@ -69,7 +67,7 @@ for i, pos in enumerate(obstacle_positions):
     obstacle_cfg = RigidObjectCfg(
         prim_path=f"{{ENV_REGEX_NS}}/Obstacle_{i}",
         spawn=sim_utils.CylinderCfg(
-            radius=gauss(0.1, 0.05),
+            radius=gauss(0.1, 0.02),
             height=3,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
