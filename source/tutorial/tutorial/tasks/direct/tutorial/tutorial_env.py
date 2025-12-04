@@ -115,15 +115,16 @@ class TutorialEnv(DirectRLEnv):
         )
         depth_frame[depth_frame >= max_vals] = max_vals
         depth_norm = depth_frame / (max_vals + 1e-8)  # +1e-8防止除零
-        # print(depth_norm.shape) # (env_num, 1, 16, 16)
-        return depth_norm  # shape:[env_num, 1, 16, 16]
+        # print(depth_norm.shape) # (env_num, 1, 16, 12)
+        return depth_norm  # shape:[env_num, 1, 16, 12]
 
     def _get_observations(self) -> dict:
         depth_norm = self._get_norm_depth_image()
-        camera_observation = torch.zeros((self.cfg.scene.num_envs, 3, 16, 16), device=self.device)  # shape=[num_envs, 3, 16, 16]
+        camera_observation = torch.zeros((self.cfg.scene.num_envs, 3, 16, 12), device=self.device)  # shape=[num_envs, 3, 16, 12]
+        # print(depth_norm.shape)  # (num_envs, 16, 12, 1)
         for env in range(self.cfg.scene.num_envs):
             camera_observation[env] = self.img_buffers[env].update_buffer(depth_norm[env])
-            # print(depth_norm[env].shape, camera_observation[env].shape)# (3, 16, 16)
+            # print(depth_norm[env].shape, camera_observation[env].shape)# (3, 16, 12)
         # print(camera_observation)
 
         robot_pos = self.robot.data.root_state_w[:, :2]  # 位置(x,y)
@@ -276,9 +277,9 @@ class DepthImageBuffer:
         """
         使用torch.roll优化缓冲区更新
         Args:
-            depth_norm: 形状为(16,16,1)的深度图张量（GPU张量）
+            depth_norm: 形状为(16,12,1)的深度图张量（GPU张量）
         Returns:
-            combined_tensor: 形状为(16,16,3)的PyTorch张量（在GPU上）
+            combined_tensor: 形状为(16,12,3)的PyTorch张量（在GPU上）
         """
         h, w, c = depth_norm.shape
 

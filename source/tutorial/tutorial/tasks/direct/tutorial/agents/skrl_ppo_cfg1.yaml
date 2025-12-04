@@ -13,12 +13,17 @@ models:
       input: STATES["camera"]
       layers:
       - conv2d:
-          out_channels: 16
-          kernel_size: 8
-          stride: 2
+          out_channels: 32
+          kernel_size: 2
+          stride: 1
           padding: 0
       - conv2d:
-          out_channels: 32
+          out_channels: 64
+          kernel_size: 3
+          stride: 1
+          padding: 0
+      - conv2d:
+          out_channels: 128
           kernel_size: 3
           stride: 1
           padding: 0
@@ -27,8 +32,8 @@ models:
     - name: net
       input: concatenate([features_extractor, STATES["robot-state"]])
       layers:
-      - 256
-      - 256
+      - 512
+      - 512
       activations: leaky_relu
     output: ACTIONS
   value:

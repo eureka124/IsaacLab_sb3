@@ -32,7 +32,7 @@ class MySceneCfg(InteractiveSceneCfg):
         prim_path="{ENV_REGEX_NS}/Robot/body/front_cam",
         update_period=0.04,
         height=16,
-        width=16,  # 深度相机的输出(16, 16)
+        width=12,  # 深度相机的输出(16, 12)
         data_types=["distance_to_image_plane"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=10.4775,
@@ -91,7 +91,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     episode_length_s = 5.0
     # - spaces definition
     # observation_space = 4
-    observation_space = {"camera": [3, 16, 16], "robot-state": 4}
+    observation_space = {"camera": [3, 16, 12], "robot-state": 4}
     state_space = 0
 
     # simulation
