@@ -11,7 +11,7 @@ from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
-from isaaclab_assets import CRAZYFLIE_CFG  # isort: skip
+from tutorial.assets.five_in_drone import FIVE_IN_DRONE
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 import isaacsim.core.utils.prims as prim_utils
 import numpy as np
@@ -19,13 +19,14 @@ from gymnasium import spaces
 import torch
 from random import gauss, seed
 
-
+_robot_spawn_cfg = FIVE_IN_DRONE.spawn.copy()
+_robot_spawn_cfg.activate_contact_sensors = True
 @configclass
 class MySceneCfg(InteractiveSceneCfg):
     # 无人机模型
-    robot_cfg: ArticulationCfg = CRAZYFLIE_CFG.replace(
+    robot_cfg: ArticulationCfg = FIVE_IN_DRONE.replace(
         prim_path="/World/envs/env_.*/Robot",
-        spawn=CRAZYFLIE_CFG.spawn.replace(activate_contact_sensors=True)
+        spawn=_robot_spawn_cfg
     )
     # 无人机主观深度相机
     camera = CameraCfg(
@@ -46,7 +47,7 @@ class MySceneCfg(InteractiveSceneCfg):
     )
     # 接触传感器
     contact_forces = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/body",
+        prim_path="{ENV_REGEX_NS}/Robot/prop.*",
         update_period=0.0,
         history_length=6,
         debug_vis=True,
@@ -55,11 +56,22 @@ class MySceneCfg(InteractiveSceneCfg):
 
 # 定义多个静止障碍物的位置
 obstacle_positions = [
-    (0.4, 0.2, 1.5),
-    (0.8, -0.5, 1.5),
-    (-0.2, 0.6, 1.5),
-    (0.5, 0.8, 1.5),
-    (-0.6, -0.4, 1.5),
+    (7.0, 7.0, 2.5),
+    (2.3333, 7.0, 2.5),
+    (-2.3333, 7.0, 2.5),
+    (-7.0, 7.0, 2.5),
+    (7.0, 2.3333, 2.5),
+    (2.3333, 2.3333, 2.5),
+    (-2.3333, 2.3333, 2.5),
+    (-7.0, 2.3333, 2.5),
+    (7.0, -2.3333, 2.5),
+    (2.3333, -2.3333, 2.5),
+    (-2.3333, -2.3333, 2.5),
+    (-7.0, -2.3333, 2.5),
+    (7.0, -7.0, 2.5),
+    (2.3333, -7.0, 2.5),
+    (-2.3333, -7.0, 2.5),
+    (-7.0, -7.0, 2.5),
 ]
 
 # 循环创建并添加障碍物配置到 MySceneCfg
@@ -67,8 +79,8 @@ for i, pos in enumerate(obstacle_positions):
     obstacle_cfg = RigidObjectCfg(
         prim_path=f"{{ENV_REGEX_NS}}/Obstacle_{i}",
         spawn=sim_utils.CylinderCfg(
-            radius=gauss(0.1, 0.02),
-            height=3,
+            radius=gauss(0.5, 0.1),
+            height=5,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
             collision_props=sim_utils.CollisionPropertiesCfg(),
@@ -98,5 +110,5 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
 
     # scene
-    scene: InteractiveSceneCfg = MySceneCfg(num_envs=4, env_spacing=2.0, replicate_physics=True)
+    scene: InteractiveSceneCfg = MySceneCfg(num_envs=4, env_spacing=25.0, replicate_physics=True)
     # static_obstacle: StaticObstacle = StaticObstacle()

@@ -20,8 +20,6 @@ from isaaclab.assets import RigidObject, RigidObjectCfg
 from random import gauss
 
 
-# 
-
 class TutorialEnv(DirectRLEnv):
     cfg: TutorialEnvCfg
 
@@ -30,7 +28,7 @@ class TutorialEnv(DirectRLEnv):
         # 创建可视化目标位置的标记
         self.target_pos = torch.zeros((self.cfg.scene.num_envs, 3), device=self.device)
         marker_cfg = CUBOID_MARKER_CFG.copy()
-        marker_cfg.markers["cuboid"].size = (0.05, 0.05, 0.05)
+        marker_cfg.markers["cuboid"].size = (0.2, 0.2, 0.2)
         # 目标位置可视化
         marker_cfg.prim_path = "/Visuals/Command/goal_position"
         self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
@@ -49,42 +47,42 @@ class TutorialEnv(DirectRLEnv):
         light_cfg = sim_utils.DomeLightCfg(intensity=4000.0, color=(1.0, 1.0, 0.75))
         light_cfg.func("/World/Light", light_cfg)
 
-        # 可动障碍物的定义 (优化后)
-        # 随机生成障碍物位置
-        obstacle_params = []
-        for _ in range(5):
-            while True:
-                # 随机生成 x, y 坐标，范围在 -1.0 到 1.0 之间
-                x = torch.rand(1).item() * 2.0 - 1.0
-                y = torch.rand(1).item() * 2.0 - 1.0
-                # 简单的避障：避免在原点(0,0)附近生成，防止与机器人重叠 (半径 > 0.1m)
-                if x**2 + y**2 > 0.01:
-                    break
-            z = 1.5  # 固定高度
-            obstacle_params.append((x, y, z))
+        # # 可动障碍物的定义 (优化后)
+        # # 随机生成障碍物位置
+        # obstacle_params = []
+        # for _ in range(5):
+        #     while True:
+        #         # 随机生成 x, y 坐标，范围在 -1.0 到 1.0 之间
+        #         x = torch.rand(1).item() * 2.0 - 1.0
+        #         y = torch.rand(1).item() * 2.0 - 1.0
+        #         # 简单的避障：避免在原点(0,0)附近生成，防止与机器人重叠 (半径 > 0.1m)
+        #         if x**2 + y**2 > 0.01:
+        #             break
+        #     z = 1.5  # 固定高度
+        #     obstacle_params.append((x, y, z))
 
-        for i, pos in enumerate(obstacle_params):
-            # 创建配置
-            obstacle_cfg = RigidObjectCfg(
-                prim_path=f"/World/move_obstacle/Move_Obstacle_{i}",
-                spawn=sim_utils.CylinderCfg(
-                    radius=gauss(0.1, 0.02),
-                    height=3.0,
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
-                    collision_props=sim_utils.CollisionPropertiesCfg(),
-                    # visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0), metallic=0.2),
-                ),
-                init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=pos,
-                ),
-            )
+        # for i, pos in enumerate(obstacle_params):
+        #     # 创建配置
+        #     obstacle_cfg = RigidObjectCfg(
+        #         prim_path=f"/World/move_obstacle/Move_Obstacle_{i}",
+        #         spawn=sim_utils.CylinderCfg(
+        #             radius=gauss(0.1, 0.02),
+        #             height=3.0,
+        #             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+        #             mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+        #             collision_props=sim_utils.CollisionPropertiesCfg(),
+        #             # visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0), metallic=0.2),
+        #         ),
+        #         init_state=RigidObjectCfg.InitialStateCfg(
+        #             pos=pos,
+        #         ),
+        #     )
             
-            # 实例化对象
-            obstacle_obj = RigidObject(cfg=obstacle_cfg)
+        #     # 实例化对象
+        #     obstacle_obj = RigidObject(cfg=obstacle_cfg)
             
-            # 动态设置类属性，相当于 self.Move_Obstacle_0 = ...
-            setattr(self, f"Move_Obstacle_{i}", obstacle_obj)
+        #     # 动态设置类属性，相当于 self.Move_Obstacle_0 = ...
+        #     setattr(self, f"Move_Obstacle_{i}", obstacle_obj)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.actions = actions.clone()
@@ -144,7 +142,7 @@ class TutorialEnv(DirectRLEnv):
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
-        ## 计算速度奖励(线速度在目标方向的分量)
+        # 计算速度奖励(线速度在目标方向的分量)
         # 获取目标位置和机器人位置，计算方向向量
         target_pos = self.target_pos[:, :2]  # 目标位置 (num_envs, 2)
         robot_pos = self.robot.data.root_pos_w[:, :2]  # 机器人位置 (num_envs, 2)
