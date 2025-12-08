@@ -71,3 +71,4 @@ tests/
 .isaac-lab-docker-history
 
 assets/
+*.sh

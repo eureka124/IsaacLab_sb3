@@ -29,8 +29,13 @@ models:
           padding: 0
       - flatten
       activations: leaky_relu
+    - name: robot_state_extractor
+      input: STATES["robot-state"]
+      layers:
+      - 192
+      activations: leaky_relu
     - name: net
-      input: concatenate([features_extractor, STATES["robot-state"]])
+      input: concatenate([features_extractor, robot_state_extractor])
       layers:
       - 512
       - 512
@@ -100,6 +105,6 @@ agent:
     checkpoint_interval: auto
 trainer:
   class: SequentialTrainer
-  timesteps: 40000
+  timesteps: 400000
   environment_info: log
   close_environment_at_exit: false
