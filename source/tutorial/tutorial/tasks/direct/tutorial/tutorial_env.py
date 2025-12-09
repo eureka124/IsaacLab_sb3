@@ -33,6 +33,10 @@ class TutorialEnv(DirectRLEnv):
         marker_cfg.prim_path = "/Visuals/Command/goal_position"
         self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
         self.img_buffers = [DepthImageBuffer() for _ in range(self.cfg.scene.num_envs)]
+        
+        # [超时次数, 碰撞次数, 到达次数]
+        self.success_rate_count = [0, 0, 0]
+        self.last_condition_state = False
 
     def _setup_scene(self):
         self.robot = self.scene["robot_cfg"]
@@ -171,34 +175,44 @@ class TutorialEnv(DirectRLEnv):
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         time_out = self.episode_length_buf >= self.max_episode_length - 1
 
-        # 计算是否到达目标位置
-        pos = self.robot.data.root_pos_w.clone()  # 机器人位置 (num_envs, 3)
-        # print(pos.shape)  # (num_envs, 3)
-        direction_vector = self.target_pos - pos  # 目标点相对机器人的位置 (num_envs, 3)  计算方向向量
-        # print(direction_vector.shape)  # (num_envs, 3)
-        direction_vector = torch.cat(
-            (direction_vector[:, 0:2], torch.zeros(direction_vector.shape[0], 1, device=direction_vector.device)),
-            dim=-1,
-        )  # 将z轴设为0
-        # print(direction_vector.shape)  # (num_envs, 3)
-        distances = torch.norm(direction_vector, p=2, dim=1, keepdim=True)  # 计算距离
-        # print(distances.shape)  # (num_envs, 1)
-        direction_vector = direction_vector / torch.norm(
-            direction_vector, dim=-1, keepdim=True
-        )
-        self.distances = distances.squeeze(dim=1)  # (num_envs,)
+        # 1. 计算距离 (忽略 Z 轴差异，仅计算 XY 平面距离)
+        pos = self.robot.data.root_pos_w[:, :2]  # 只取 (x, y)
+        target = self.target_pos[:, :2]          # 只取 (x, y)
+        
+        # 计算欧几里得距离
+        distances = torch.norm(target - pos, p=2, dim=-1)  # (num_envs,)
+        self.distances = distances # 保存用于可能的奖励计算
 
-        arrived = (distances <= 0.1).squeeze(dim=1)
+        # 判断是否到达 (阈值 0.1 米)
+        arrived = distances <= 0.1
         self.arrived = arrived
 
-        # 判断是否碰撞
-        contact_forces = self.scene["contact_forces"].data.net_forces_w  # shape: (num_envs, num_sensors, 3)
-        # print("Contact forces:", contact_forces)
-        contact_magnitudes = torch.norm(contact_forces, dim=-1)  # shape: (num_envs, num_sensors)
-        # print("Contact magnitudes:", contact_magnitudes)
-        collided = (contact_magnitudes > 0.01).any(dim=1)  # shape: (num_envs,)
+        # 2. 判断是否碰撞
+        # 获取接触力
+        contact_forces = self.scene["contact_forces"].data.net_forces_w
+        # 计算合力大小
+        contact_magnitudes = torch.norm(contact_forces, dim=-1)
+        # 阈值建议提高到 1.0，避免物理引擎噪声导致的误判
+        collided = (contact_magnitudes > 1.0).any(dim=1)
         self.collided = collided
-        reset_envs = arrived | collided
+
+        # 3. 统计信息 (确保在 __init__ 中初始化了这些变量)
+        self.success_rate_count[0] += time_out.sum().item()
+        self.success_rate_count[1] += collided.sum().item()
+        self.success_rate_count[2] += arrived.sum().item()
+        
+        current_sum = sum(self.success_rate_count)
+        # 每 25 次事件打印一次
+        if current_sum > 0 and current_sum % 25 == 0:
+            if not self.last_condition_state: # 防止同一步重复打印
+                print(f"Stats [Timeout, Collision, Arrived]: {self.success_rate_count}")
+                # print(f"Last Reward: {self.allreward}") # 确保 self.allreward 存在
+                self.last_condition_state = True
+        else:
+            self.last_condition_state = False
+
+        # 4. 决定重置的环境
+        reset_envs = arrived | collided | time_out # 通常超时也需要重置，除非由外部 runner 处理
 
         return reset_envs, time_out
 
