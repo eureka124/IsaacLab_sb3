@@ -154,7 +154,7 @@ class TutorialEnv(DirectRLEnv):
         direction_vector = direction_vector / torch.norm(
             direction_vector, dim=-1, keepdim=True
         )  # 归一化方向向量 (num_envs, 2)
-        linear_velocity = self.robot.data.default_root_state[:, 7:9]  # 线速度 (num_envs, 2) [vx, vy]
+        linear_velocity = self.robot.data.root_lin_vel_w[:, :2]  # 线速度 (num_envs, 2) [vx, vy]
         reward_velocity = torch.sum(linear_velocity * direction_vector, dim=1)  # 速度奖励 (num_envs,)
 
         # 计算动作平滑惩罚
@@ -163,7 +163,10 @@ class TutorialEnv(DirectRLEnv):
         action_diff = self.actions - self.prev_actions  # 动作变化 (num_envs    , 2)
         penalty_smooth = torch.norm(action_diff, p=2, dim=1)  # 平滑惩罚 (num_envs,)
         self.prev_actions = self.actions.clone()  # 更新前一动作
-
+        # print("Penalty Smooth:", penalty_smooth)
+        # print("Reward Velocity:", reward_velocity)
+        # print("Collided:", self.collided)
+        # print("Arrived:", self.arrived)
         total_reward = compute_rewards(
             reward_velocity,
             self.collided,
@@ -221,7 +224,7 @@ class TutorialEnv(DirectRLEnv):
             env_ids = self.robot._ALL_INDICES
         super()._reset_idx(env_ids)
 
-        default_root_state = self.robot.data.default_root_state[env_ids]
+        default_root_state = self.robot.data.default_root_state[env_ids].clone()
         # print("Resetting envs:", env_ids)
         # 将重置的环境位置偏移到对应环境的原点位置
         default_root_state[:, :3] += self.scene.env_origins[env_ids]
@@ -356,6 +359,8 @@ class DepthImageBuffer:
         Returns:
             bool: 缓冲区已满返回True，否则返回False
         """
+        if self.buffer is None:
+            return False
         return len(self.buffer) >= self.buffer_size
 
     def get_current_size(self):
@@ -364,6 +369,8 @@ class DepthImageBuffer:
         Returns:
             int: 当前缓冲区中的图片数量
         """
+        if self.buffer is None:
+            return 0
         return len(self.buffer)
 
 
