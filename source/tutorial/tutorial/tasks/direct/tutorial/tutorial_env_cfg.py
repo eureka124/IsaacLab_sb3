@@ -93,8 +93,8 @@ for i, pos in enumerate(obstacle_positions):
 @configclass
 class TutorialEnvCfg(DirectRLEnvCfg):
     # env
-    decimation = 5      #5个dt进行一次决策
-    episode_length_s = 40       #导航任务最长时间40s
+    decimation = 5      # 5个dt进行一次决策
+    episode_length_s = 40       # 导航任务最长时间40s
 
     action_space = spaces.Box(
         low=np.array([-10.0, -10.0], dtype=np.float32),  # 每个维度的最小值
