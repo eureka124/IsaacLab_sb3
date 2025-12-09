@@ -6,8 +6,8 @@ models:
     clip_actions: False
     clip_log_std: True
     min_log_std: -20.0
-    max_log_std: 2.0
-    initial_log_std: 0.0
+    max_log_std: 10.0
+    initial_log_std: 5.0
     network:
     - name: features_extractor
       input: STATES["camera"]
@@ -105,6 +105,6 @@ agent:
     checkpoint_interval: auto
 trainer:
   class: SequentialTrainer
-  timesteps: 400000
+  timesteps: 100000
   environment_info: log
   close_environment_at_exit: false

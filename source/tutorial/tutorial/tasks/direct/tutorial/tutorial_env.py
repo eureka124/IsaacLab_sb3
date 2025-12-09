@@ -155,7 +155,7 @@ class TutorialEnv(DirectRLEnv):
 
         # 计算动作平滑惩罚
         if not hasattr(self, 'prev_actions'):
-            self.prev_actions = torch.zeros_like(self.actions)
+            self.prev_actions = torch.zeros_like(self.actions, device=self.device)
         action_diff = self.actions - self.prev_actions  # 动作变化 (num_envs    , 2)
         penalty_smooth = torch.norm(action_diff, p=2, dim=1)  # 平滑惩罚 (num_envs,)
         self.prev_actions = self.actions.clone()  # 更新前一动作
