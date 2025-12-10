@@ -72,3 +72,4 @@ tests/
 
 assets/
 *.sh
+clean_logs.py
