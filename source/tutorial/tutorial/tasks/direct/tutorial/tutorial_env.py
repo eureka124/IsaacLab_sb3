@@ -228,6 +228,8 @@ class TutorialEnv(DirectRLEnv):
         # print("Resetting envs:", env_ids)
         # 将重置的环境位置偏移到对应环境的原点位置
         default_root_state[:, :3] += self.scene.env_origins[env_ids]
+        default_root_state[:, 0] += self.cfg.scene.env_spacing / 2.0 + 0.5
+        default_root_state[:, 1] += self.cfg.scene.env_spacing / 2.0 + 0.5
 
         # 设置机器人速度
         self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
@@ -236,12 +238,12 @@ class TutorialEnv(DirectRLEnv):
         len_env_ids = len(env_ids)
         x = (
             torch.zeros(len_env_ids, device=self.device)
-            .uniform_(-self.cfg.scene.env_spacing / 2.0, self.cfg.scene.env_spacing / 2.0)
+            .uniform_(-self.cfg.scene.env_spacing / 2.0 + 4.0, self.cfg.scene.env_spacing / 2.0 - 4.0)
             .unsqueeze(dim=1)
         )
         y = (
             torch.zeros(len_env_ids, device=self.device)
-            .uniform_(-self.cfg.scene.env_spacing / 2.0, self.cfg.scene.env_spacing / 2.0)
+            .uniform_(-self.cfg.scene.env_spacing / 2.0 + 4.0, self.cfg.scene.env_spacing / 2.0 - 4.0)
             .unsqueeze(dim=1)
         )
         z = torch.zeros(len_env_ids, device=self.device).uniform_(2, 2).unsqueeze(dim=1)
@@ -386,6 +388,7 @@ def compute_rewards(
 
 
 # 偏航角转换为四元数
+@torch.jit.script
 def yaw_to_quaternion(yaw: torch.Tensor) -> torch.Tensor:
     """
     将yaw角度转换为四元数表示
@@ -408,6 +411,7 @@ def yaw_to_quaternion(yaw: torch.Tensor) -> torch.Tensor:
 
 
 # 根据目标位置和机器人位置计算yaw角度
+@torch.jit.script
 def get_target_direction(target_pos, robot_pos) -> torch.Tensor:
     direction_vector = target_pos - robot_pos  # 目标点相对机器人的位置 (num_reset_envs, 2)[env_id, x, y]
     direction_vector = direction_vector / torch.norm(
