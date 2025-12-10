@@ -383,7 +383,7 @@ def compute_rewards(
     penalty_smooth: torch.Tensor,
     arrived: torch.Tensor,
 ):
-    total_reward = reward_velocity * 5.0 - penalty_smooth * 0.001 - collided * 10.0 + arrived * 100.0
+    total_reward = reward_velocity * 1.0 - penalty_smooth * 0.1 - collided * 10.0 + arrived * 0.0
     return total_reward.unsqueeze(-1)  # 返回 (num_envs, 1) 通常更安全
 
 
