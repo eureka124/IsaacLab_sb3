@@ -25,6 +25,7 @@ class TutorialEnv(DirectRLEnv):
 
     def __init__(self, cfg: TutorialEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
+        # print("__init__")
         # 创建可视化目标位置的标记
         self.target_pos = torch.zeros((self.cfg.scene.num_envs, 3), device=self.device)
         marker_cfg = CUBOID_MARKER_CFG.copy()
@@ -89,9 +90,11 @@ class TutorialEnv(DirectRLEnv):
         #     setattr(self, f"Move_Obstacle_{i}", obstacle_obj)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
+        # print("_pre_physics_step")
         self.actions = actions.clone()
 
     def _apply_action(self) -> None:
+        # print("_apply_action")
         now_v = torch.zeros((self.num_envs, 6), device=self.device)
         now_v[:, 0:2] = self.actions  # vx, vy
 
@@ -176,6 +179,7 @@ class TutorialEnv(DirectRLEnv):
         return total_reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
+        # print("_get_dones")
         time_out = self.episode_length_buf >= self.max_episode_length - 1
 
         # 1. 计算距离 (忽略 Z 轴差异，仅计算 XY 平面距离)
