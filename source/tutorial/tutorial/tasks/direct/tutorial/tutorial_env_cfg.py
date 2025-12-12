@@ -2,8 +2,6 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
-
-
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg
 from isaaclab.sensors import CameraCfg, ContactSensorCfg
@@ -14,6 +12,7 @@ from isaaclab.utils import configclass
 from tutorial.assets.five_in_drone import FIVE_IN_DRONE
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 import isaacsim.core.utils.prims as prim_utils
+from isaaclab.sensors import CameraCfg, ContactSensorCfg
 import numpy as np
 from gymnasium import spaces
 import torch
@@ -148,15 +147,14 @@ class TutorialEnvCfg(DirectRLEnvCfg):
         shape=(2,),  # 动作空间的形状，2表示两个连续动作
         dtype=np.float32
     )  # 连续动作空间，表示机器人的线速度和角速度
-
+    decimation = 5  # 控制频率与模拟频率的比率
+    episode_length_s = 5.0
     # - spaces definition
     # observation_space = 4
     observation_space = {"camera": [3, 16, 12], "robot-state": 4}
     state_space = 0
-
     # simulation
     sim: SimulationCfg = SimulationCfg(dt=1 / 100, render_interval=decimation)
 
     # scene
     scene: InteractiveSceneCfg = MySceneCfg(num_envs=4, env_spacing=25.0, replicate_physics=True)
-    # static_obstacle: StaticObstacle = StaticObstacle()

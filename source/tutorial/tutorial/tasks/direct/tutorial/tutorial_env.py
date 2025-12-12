@@ -25,6 +25,7 @@ class TutorialEnv(DirectRLEnv):
 
     def __init__(self, cfg: TutorialEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
+        # print("__init__")
         # 创建可视化目标位置的标记
         self.target_pos = torch.zeros((self.cfg.scene.num_envs, 3), device=self.device)
         marker_cfg = CUBOID_MARKER_CFG.copy()
@@ -89,9 +90,11 @@ class TutorialEnv(DirectRLEnv):
         #     setattr(self, f"Move_Obstacle_{i}", obstacle_obj)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
+        # print("_pre_physics_step")
         self.actions = actions.clone()
 
     def _apply_action(self) -> None:
+        # print("_apply_action")
         now_v = torch.zeros((self.num_envs, 6), device=self.device)
         now_v[:, 0:2] = self.actions  # vx, vy
 
@@ -176,6 +179,7 @@ class TutorialEnv(DirectRLEnv):
         return total_reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
+        # print("_get_dones")
         time_out = self.episode_length_buf >= self.max_episode_length - 1
 
         # 1. 计算距离 (忽略 Z 轴差异，仅计算 XY 平面距离)
@@ -210,7 +214,7 @@ class TutorialEnv(DirectRLEnv):
                 print(f"Stats [Timeout, Collision, Arrived]: {self.success_rate_count / self.success_rate_count.sum().item() * 100:.2f}")
                 # print(f"Last Reward: {self.allreward}") # 确保 self.allreward 存在
                 self.last_condition_state = True
-                self.success_rate_count = torch.zeros(3, dtype=torch.int32, device=self.device)  # 重置计数器
+                self.success_rate_count[:] = 0
         else:
             self.last_condition_state = False
 
@@ -383,7 +387,7 @@ def compute_rewards(
     penalty_smooth: torch.Tensor,
     arrived: torch.Tensor,
 ):
-    total_reward = reward_velocity * 1.0 - penalty_smooth * 0.1 - collided * 10.0 + arrived * 0.0
+    total_reward = reward_velocity * 1.0 - penalty_smooth * 0.1 - collided * 20.0 + arrived * 5.0
     return total_reward.unsqueeze(-1)  # 返回 (num_envs, 1) 通常更安全
 
 
