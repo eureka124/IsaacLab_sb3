@@ -35,7 +35,7 @@ class TutorialEnv(DirectRLEnv):
         self.img_buffers = [DepthImageBuffer() for _ in range(self.cfg.scene.num_envs)]
         
         # [超时次数, 碰撞次数, 到达次数]
-        self.success_rate_count = [0, 0, 0]
+        self.success_rate_count = torch.zeros(3, dtype=torch.float16, device=self.device)
         self.last_condition_state = False
 
     def _setup_scene(self):
@@ -181,7 +181,7 @@ class TutorialEnv(DirectRLEnv):
         # 1. 计算距离 (忽略 Z 轴差异，仅计算 XY 平面距离)
         pos = self.robot.data.root_pos_w[:, :2]  # 只取 (x, y)
         target = self.target_pos[:, :2]          # 只取 (x, y)
-        
+
         # 计算欧几里得距离
         distances = torch.norm(target - pos, p=2, dim=-1)  # (num_envs,)
         self.distances = distances # 保存用于可能的奖励计算
@@ -203,19 +203,19 @@ class TutorialEnv(DirectRLEnv):
         self.success_rate_count[0] += time_out.sum().item()
         self.success_rate_count[1] += collided.sum().item()
         self.success_rate_count[2] += arrived.sum().item()
-        
         current_sum = sum(self.success_rate_count)
-        # 每 25 次事件打印一次
-        if current_sum > 0 and current_sum % 25 == 0:
-            if not self.last_condition_state: # 防止同一步重复打印
-                print(f"Stats [Timeout, Collision, Arrived]: {self.success_rate_count}")
+        # 每 100 次事件打印一次
+        if current_sum > 0 and current_sum % 100 == 0:
+            if not self.last_condition_state:  # 防止同一步重复打印
+                print(f"Stats [Timeout, Collision, Arrived]: {self.success_rate_count / self.success_rate_count.sum().item() * 100:.2f}")
                 # print(f"Last Reward: {self.allreward}") # 确保 self.allreward 存在
                 self.last_condition_state = True
+                self.success_rate_count = torch.zeros(3, dtype=torch.int32, device=self.device)  # 重置计数器
         else:
             self.last_condition_state = False
 
         # 4. 决定重置的环境
-        reset_envs = arrived | collided | time_out # 通常超时也需要重置，除非由外部 runner 处理
+        reset_envs = arrived | collided | time_out  # 通常超时也需要重置，除非由外部 runner 处理
 
         return reset_envs, time_out
 
