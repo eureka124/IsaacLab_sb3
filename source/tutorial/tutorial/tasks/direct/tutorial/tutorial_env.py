@@ -34,9 +34,11 @@ class TutorialEnv(DirectRLEnv):
         marker_cfg.prim_path = "/Visuals/Command/goal_position"
         self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
         self.img_buffers = [DepthImageBuffer() for _ in range(self.cfg.scene.num_envs)]
-        
+
         # [超时次数, 碰撞次数, 到达次数]
-        self.success_rate_count = torch.zeros(3, dtype=torch.float16, device=self.device)
+        self.success_rate_count = torch.zeros(
+            3, dtype=torch.float16, device=self.device
+        )
         self.last_condition_state = False
 
     def _setup_scene(self):
@@ -82,10 +84,8 @@ class TutorialEnv(DirectRLEnv):
         #             pos=pos,
         #         ),
         #     )
-            
         #     # 实例化对象
         #     obstacle_obj = RigidObject(cfg=obstacle_cfg)
-            
         #     # 动态设置类属性，相当于 self.Move_Obstacle_0 = ...
         #     setattr(self, f"Move_Obstacle_{i}", obstacle_obj)
 
@@ -109,7 +109,9 @@ class TutorialEnv(DirectRLEnv):
         self.robot.write_root_velocity_to_sim(now_v, env_ids=None)
 
     def _get_norm_depth_image(self) -> torch.Tensor:
-        depth_frame = self.scene["camera"].data.output["distance_to_image_plane"].clone()
+        depth_frame = (
+            self.scene["camera"].data.output["distance_to_image_plane"].clone()
+        )
         # 归一化深度图
         max_vals = 5  # 相机最远探测距离m
         depth_frame = torch.nan_to_num(
@@ -125,27 +127,29 @@ class TutorialEnv(DirectRLEnv):
 
     def _get_observations(self) -> dict:
         depth_norm = self._get_norm_depth_image()
-        camera_observation = torch.zeros((self.cfg.scene.num_envs, 3, 16, 12), device=self.device)  # shape=[num_envs, 3, 16, 12]
+        camera_observation = torch.zeros(
+            (self.cfg.scene.num_envs, 3, 16, 12), device=self.device
+        )  # shape=[num_envs, 3, 16, 12]
         # print(depth_norm.shape)  # (num_envs, 16, 12, 1)
         for env in range(self.cfg.scene.num_envs):
-            camera_observation[env] = self.img_buffers[env].update_buffer(depth_norm[env])
+            camera_observation[env] = self.img_buffers[env].update_buffer(
+                depth_norm[env]
+            )
             # print(depth_norm[env].shape, camera_observation[env].shape)# (3, 16, 12)
         # print(camera_observation)
 
         robot_pos = self.robot.data.root_state_w[:, :2]  # 位置(x,y)
-        relative_position = self.target_pos[:, :2] - robot_pos  # 目标位置相对于机器人的位置差 (num_envs, 2)
+        relative_position = (
+            self.target_pos[:, :2] - robot_pos
+        )  # 目标位置相对于机器人的位置差 (num_envs, 2)
         # 归一化
         relative_position /= torch.norm(relative_position, dim=-1, keepdim=True) + 1e-8
         last_action = self.actions
-        obs = torch.cat((relative_position, last_action), dim=-1)  # shape: (num_envs, 4)
+        obs = torch.cat(
+            (relative_position, last_action), dim=-1
+        )  # shape: (num_envs, 4)
 
-        observations = {
-            "policy":
-            {
-                "robot-state": obs,
-                "camera": camera_observation
-            }
-        }
+        observations = {"policy": {"robot-state": obs, "camera": camera_observation}}
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
@@ -153,15 +157,21 @@ class TutorialEnv(DirectRLEnv):
         # 获取目标位置和机器人位置，计算方向向量
         target_pos = self.target_pos[:, :2]  # 目标位置 (num_envs, 2)
         robot_pos = self.robot.data.root_pos_w[:, :2]  # 机器人位置 (num_envs, 2)
-        direction_vector = target_pos - robot_pos  # 目标点相对机器人的位置 (num_envs, 2)
+        direction_vector = (
+            target_pos - robot_pos
+        )  # 目标点相对机器人的位置 (num_envs, 2)
         direction_vector = direction_vector / torch.norm(
             direction_vector, dim=-1, keepdim=True
         )  # 归一化方向向量 (num_envs, 2)
-        linear_velocity = self.robot.data.root_lin_vel_w[:, :2]  # 线速度 (num_envs, 2) [vx, vy]
-        reward_velocity = torch.sum(linear_velocity * direction_vector, dim=1)  # 速度奖励 (num_envs,)
+        linear_velocity = self.robot.data.root_lin_vel_w[
+            :, :2
+        ]  # 线速度 (num_envs, 2) [vx, vy]
+        reward_velocity = torch.sum(
+            linear_velocity * direction_vector, dim=1
+        )  # 速度奖励 (num_envs,)
 
         # 计算动作平滑惩罚
-        if not hasattr(self, 'prev_actions'):
+        if not hasattr(self, "prev_actions"):
             self.prev_actions = torch.zeros_like(self.actions, device=self.device)
         action_diff = self.actions - self.prev_actions  # 动作变化 (num_envs    , 2)
         penalty_smooth = torch.norm(action_diff, p=2, dim=1)  # 平滑惩罚 (num_envs,)
@@ -184,11 +194,11 @@ class TutorialEnv(DirectRLEnv):
 
         # 1. 计算距离 (忽略 Z 轴差异，仅计算 XY 平面距离)
         pos = self.robot.data.root_pos_w[:, :2]  # 只取 (x, y)
-        target = self.target_pos[:, :2]          # 只取 (x, y)
+        target = self.target_pos[:, :2]  # 只取 (x, y)
 
         # 计算欧几里得距离
         distances = torch.norm(target - pos, p=2, dim=-1)  # (num_envs,)
-        self.distances = distances # 保存用于可能的奖励计算
+        self.distances = distances  # 保存用于可能的奖励计算
 
         # 判断是否到达 (阈值 0.1 米)
         arrived = distances <= 0.1
@@ -211,7 +221,9 @@ class TutorialEnv(DirectRLEnv):
         # 每 100 次事件打印一次
         if current_sum > 0 and current_sum % 100 == 0:
             if not self.last_condition_state:  # 防止同一步重复打印
-                print(f"Stats [Timeout, Collision, Arrived]: {self.success_rate_count / self.success_rate_count.sum().item() * 100:.2f}")
+                print(
+                    f"Stats [Timeout, Collision, Arrived]: {self.success_rate_count / self.success_rate_count.sum().item() * 100:.2f}"
+                )
                 # print(f"Last Reward: {self.allreward}") # 确保 self.allreward 存在
                 self.last_condition_state = True
                 self.success_rate_count[:] = 0
@@ -219,7 +231,9 @@ class TutorialEnv(DirectRLEnv):
             self.last_condition_state = False
 
         # 4. 决定重置的环境
-        reset_envs = arrived | collided | time_out  # 通常超时也需要重置，除非由外部 runner 处理
+        reset_envs = (
+            arrived | collided | time_out
+        )  # 通常超时也需要重置，除非由外部 runner 处理
 
         return reset_envs, time_out
 
@@ -242,12 +256,18 @@ class TutorialEnv(DirectRLEnv):
         len_env_ids = len(env_ids)
         x = (
             torch.zeros(len_env_ids, device=self.device)
-            .uniform_(-self.cfg.scene.env_spacing / 2.0 + 4.0, self.cfg.scene.env_spacing / 2.0 - 4.0)
+            .uniform_(
+                -self.cfg.scene.env_spacing / 2.0 + 4.0,
+                self.cfg.scene.env_spacing / 2.0 - 4.0,
+            )
             .unsqueeze(dim=1)
         )
         y = (
             torch.zeros(len_env_ids, device=self.device)
-            .uniform_(-self.cfg.scene.env_spacing / 2.0 + 4.0, self.cfg.scene.env_spacing / 2.0 - 4.0)
+            .uniform_(
+                -self.cfg.scene.env_spacing / 2.0 + 4.0,
+                self.cfg.scene.env_spacing / 2.0 - 4.0,
+            )
             .unsqueeze(dim=1)
         )
         z = torch.zeros(len_env_ids, device=self.device).uniform_(2, 2).unsqueeze(dim=1)
@@ -306,9 +326,9 @@ class DepthImageBuffer:
 
         # 初始化缓冲区
         if self.buffer is None:
-            self.buffer = torch.zeros(self.buffer_size, h, w,
-                                      device=depth_norm.device,
-                                      dtype=depth_norm.dtype)
+            self.buffer = torch.zeros(
+                self.buffer_size, h, w, device=depth_norm.device, dtype=depth_norm.dtype
+            )
 
         if self.buffer_full:
             # 缓冲区已满，使用torch.roll滚动更新
@@ -330,8 +350,14 @@ class DepthImageBuffer:
             indices = [1, 0, 0]
         else:
             # 有3张或以上图片
-            latest_idx = self.current_size - 1 if not self.buffer_full else self.buffer_size - 1
-            middle_idx = self.current_size // 2 if not self.buffer_full else self.buffer_size // 2
+            latest_idx = (
+                self.current_size - 1 if not self.buffer_full else self.buffer_size - 1
+            )
+            middle_idx = (
+                self.current_size // 2
+                if not self.buffer_full
+                else self.buffer_size // 2
+            )
             oldest_idx = 0
             indices = [latest_idx, middle_idx, oldest_idx]
 
@@ -346,9 +372,9 @@ class DepthImageBuffer:
         return {
             "buffer_shape": self.buffer.shape if self.buffer is not None else None,
             "current_size": self.current_size,
-            "buffer_full": self.buffer_full
+            "buffer_full": self.buffer_full,
         }
-    
+
     def clear_buffer(self):
         """清空缓冲区"""
         self.buffer = None
@@ -387,7 +413,9 @@ def compute_rewards(
     penalty_smooth: torch.Tensor,
     arrived: torch.Tensor,
 ):
-    total_reward = reward_velocity * 1.0 - penalty_smooth * 0.1 - collided * 20.0 + arrived * 5.0
+    total_reward = (
+        reward_velocity * 1.0 - penalty_smooth * 0.1 - collided * 20.0 + arrived * 5.0
+    )
     return total_reward.unsqueeze(-1)  # 返回 (num_envs, 1) 通常更安全
 
 
@@ -407,17 +435,19 @@ def yaw_to_quaternion(yaw: torch.Tensor) -> torch.Tensor:
 
     # 四元数表示 (w, x, y, z)
     quaternions = torch.zeros((yaw.shape[0], 4), device=yaw.device)
-    quaternions[:, 0] = cy   # w
+    quaternions[:, 0] = cy  # w
     quaternions[:, 1] = 0.0  # x
     quaternions[:, 2] = 0.0  # y
-    quaternions[:, 3] = sy   # z
+    quaternions[:, 3] = sy  # z
     return quaternions
 
 
 # 根据目标位置和机器人位置计算yaw角度
 @torch.jit.script
 def get_target_direction(target_pos, robot_pos) -> torch.Tensor:
-    direction_vector = target_pos - robot_pos  # 目标点相对机器人的位置 (num_reset_envs, 2)[env_id, x, y]
+    direction_vector = (
+        target_pos - robot_pos
+    )  # 目标点相对机器人的位置 (num_reset_envs, 2)[env_id, x, y]
     direction_vector = direction_vector / torch.norm(
         direction_vector, dim=-1, keepdim=True
     )
