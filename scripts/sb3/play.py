@@ -5,7 +5,7 @@
 
 """Script to play a checkpoint if an RL agent from Stable-Baselines3."""
 
-"""Launch Isaac Sim Simulator first."""
+"""Launch Isaac Sim Simulator first.yu_test"""
 
 import argparse
 import sys
