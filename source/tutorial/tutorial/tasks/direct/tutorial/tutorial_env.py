@@ -36,9 +36,7 @@ class TutorialEnv(DirectRLEnv):
         self.img_buffers = [DepthImageBuffer() for _ in range(self.cfg.scene.num_envs)]
 
         # [超时次数, 碰撞次数, 到达次数]
-        self.success_rate_count = torch.zeros(
-            3, dtype=torch.float16, device=self.device
-        )
+        self.success_rate_count = torch.zeros(3, dtype=torch.float32)
         self.last_condition_state = False
 
     def _setup_scene(self):
@@ -221,9 +219,7 @@ class TutorialEnv(DirectRLEnv):
         # 每 100 次事件打印一次
         if current_sum > 0 and current_sum % 100 == 0:
             if not self.last_condition_state:  # 防止同一步重复打印
-                print(
-                    f"Stats [Timeout, Collision, Arrived]: {self.success_rate_count / self.success_rate_count.sum().item() * 100:.2f}"
-                )
+                print(f"Stats [Timeout, Collision, Arrived]: {self.success_rate_count / self.success_rate_count.sum().item() * 100}")
                 # print(f"Last Reward: {self.allreward}") # 确保 self.allreward 存在
                 self.last_condition_state = True
                 self.success_rate_count[:] = 0
