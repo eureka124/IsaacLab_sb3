@@ -11,11 +11,9 @@ from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 from tutorial.assets.five_in_drone import FIVE_IN_DRONE
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
-import isaacsim.core.utils.prims as prim_utils
 from isaaclab.sensors import CameraCfg, ContactSensorCfg
 import numpy as np
 from gymnasium import spaces
-import torch
 
 _robot_spawn_cfg = FIVE_IN_DRONE.spawn.copy()
 _robot_spawn_cfg.activate_contact_sensors = True

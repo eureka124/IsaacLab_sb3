@@ -3,21 +3,13 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from __future__ import annotations
-import math
 import torch
-from collections.abc import Sequence
-import collections
 import isaaclab.sim as sim_utils
-from isaaclab.assets import Articulation
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
-from isaaclab.utils.math import sample_uniform
 from .tutorial_env_cfg import TutorialEnvCfg
 from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
 from isaaclab.markers import VisualizationMarkers
-from isaaclab.assets import RigidObject, RigidObjectCfg
-from random import gauss
 
 
 class TutorialEnv(DirectRLEnv):
@@ -36,9 +28,7 @@ class TutorialEnv(DirectRLEnv):
         self.img_buffers = [DepthImageBuffer() for _ in range(self.cfg.scene.num_envs)]
 
         # [超时次数, 碰撞次数, 到达次数]
-        self.success_rate_count = torch.zeros(
-            3, dtype=torch.float16, device=self.device
-        )
+        self.success_rate_count = torch.zeros(3, dtype=torch.float32)
         self.last_condition_state = False
 
     def _setup_scene(self):
@@ -67,7 +57,6 @@ class TutorialEnv(DirectRLEnv):
         #             break
         #     z = 1.5  # 固定高度
         #     obstacle_params.append((x, y, z))
-
         # for i, pos in enumerate(obstacle_params):
         #     # 创建配置
         #     obstacle_cfg = RigidObjectCfg(
@@ -222,7 +211,7 @@ class TutorialEnv(DirectRLEnv):
         if current_sum > 0 and current_sum % 100 == 0:
             if not self.last_condition_state:  # 防止同一步重复打印
                 print(
-                    f"Stats [Timeout, Collision, Arrived]: {self.success_rate_count / self.success_rate_count.sum().item() * 100:.2f}"
+                    f"Stats [Timeout, Collision, Arrived]: {self.success_rate_count / self.success_rate_count.sum().item() * 100}"
                 )
                 # print(f"Last Reward: {self.allreward}") # 确保 self.allreward 存在
                 self.last_condition_state = True
