@@ -4,7 +4,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from __future__ import annotations
-
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 import math
 import torch
 import torch.nn.functional as F
@@ -187,7 +188,7 @@ class IsaacLabTutorial3Env(DirectRLEnv):
         #     action_dim=self.ACTION_DIM
         # )
         ########################################
-
+        self.velocity_recorder = VelocityRecorder(dt=5.0/120.0)
         #############################记录与目标点最小距离的变量
         self.target_min_distance = torch.full((self.cfg.scene.num_envs, 1), float('inf')).cuda()
         self.actions=torch.zeros_like(self.actions)
@@ -220,6 +221,9 @@ class IsaacLabTutorial3Env(DirectRLEnv):
         self.record.append(actions[1,1].item())
         #################################
         self.actions = actions.clone() 
+        lin_speed = self.actions[0][0].item()
+        ang_speed = self.actions[0][1].item()
+        self.velocity_recorder.record(lin_speed, ang_speed)
         #################################
         # weights = torch.tensor([[0.12, 0.09]],  # (1-0.88)=0.12, (1-0.91)=0.09
         #                     device=self.actions.device,
@@ -915,6 +919,8 @@ class IsaacLabTutorial3Env(DirectRLEnv):
         ################################清空reset的深度图队列
         if 0 in env_ids:
             self.image_buffer1.clear_buffer()
+            self.velocity_recorder.plot_curves(smooth=False,save_path="/home/yu/Documents/a.png")
+            self.velocity_recorder.reset()
         if 1 in env_ids:
             self.image_buffer2.clear_buffer() 
             with open('//home/yu/record.txt', 'w', encoding='utf-8') as f:
@@ -1592,3 +1598,242 @@ class ExpertTempBuffer:
         """获取当前缓冲区存储的步数"""
         return len(self.temp_actions)
 
+class VelocityRecorder:
+    """速度记录器，用于记录和可视化速度、加速度数据"""
+    
+    def __init__(self, dt=5.0/120.0):
+        """
+        初始化记录器
+        
+        参数:
+            dt: 时间步长 (秒)
+        """
+        self.dt = dt
+        self.reset()
+        
+    def reset(self):
+        """重置所有记录"""
+        self.time_steps = []
+        self.linear_speeds = []
+        self.angular_speeds = []
+        self.linear_accelerations = []
+        self.angular_accelerations = []
+        self.linear_jerks = []  # 线加加速度
+        self.angular_jerks = []  # 角加加速度
+        self.record_count = 0
+        
+    def record(self, linear_speed, angular_speed):
+        """
+        记录当前时间步的速度并计算加速度
+        
+        参数:
+            linear_speed: 线速度 (m/s)
+            angular_speed: 角速度 (rad/s)
+        """
+        # 记录时间
+        current_time = self.record_count * self.dt
+        self.time_steps.append(current_time)
+        
+        # 记录速度
+        self.linear_speeds.append(linear_speed)
+        self.angular_speeds.append(angular_speed)
+        
+        # 计算加速度（至少需要两个点）
+        if len(self.linear_speeds) >= 2:
+            # 线加速度 (m/s²)
+            lin_acc = (self.linear_speeds[-1] - self.linear_speeds[-2]) / self.dt
+            self.linear_accelerations.append(lin_acc)
+            
+            # 角加速度 (rad/s²)
+            ang_acc = (self.angular_speeds[-1] - self.angular_speeds[-2]) / self.dt
+            self.angular_accelerations.append(ang_acc)
+            
+            # 计算加加速度（至少需要三个点计算加速度，然后计算加速度的变化率）
+            if len(self.linear_accelerations) >= 2:
+                # 线加加速度 (m/s³)
+                lin_jerk = (self.linear_accelerations[-1] - self.linear_accelerations[-2]) / self.dt
+                self.linear_jerks.append(lin_jerk)
+                
+                # 角加加速度 (rad/s³)
+                ang_jerk = (self.angular_accelerations[-1] - self.angular_accelerations[-2]) / self.dt
+                self.angular_jerks.append(ang_jerk)
+        
+        self.record_count += 1
+    
+    def smooth_data(self, data, window_length=5, polyorder=2):
+        """平滑数据以减少噪声"""
+        if len(data) < window_length:
+            return data
+        return savgol_filter(data, window_length, polyorder)
+    
+    def plot_curves(self, save_path=None, smooth=False, window_size=7):
+        """
+        绘制所有曲线
+        
+        参数:
+            save_path: 保存图像的路径，如果为None则不保存
+            smooth: 是否平滑数据
+            window_size: 平滑窗口大小
+        """
+        if len(self.time_steps) < 2:
+            print("数据不足，无法绘制曲线")
+            return
+            
+        fig, axes = plt.subplots(3, 2, figsize=(15, 12))
+        
+        # 准备数据
+        time_steps = np.array(self.time_steps)
+        linear_speeds = np.array(self.linear_speeds)
+        angular_speeds = np.array(self.angular_speeds)
+        
+        # 加速度数据时间轴（少一个点）
+        if len(self.linear_accelerations) > 0:
+            acc_time_steps = time_steps[1:]
+            linear_accels = np.array(self.linear_accelerations)
+            angular_accels = np.array(self.angular_accelerations)
+        
+        # 加加速度数据时间轴（少两个点）
+        if len(self.linear_jerks) > 0:
+            jerk_time_steps = time_steps[2:]
+            linear_jerks = np.array(self.linear_jerks)
+            angular_jerks = np.array(self.angular_jerks)
+        
+        # 可选平滑
+        if smooth and len(time_steps) >= window_size:
+            linear_speeds_smooth = self.smooth_data(linear_speeds, window_size)
+            angular_speeds_smooth = self.smooth_data(angular_speeds, window_size)
+            if len(linear_accels) >= window_size:
+                linear_accels_smooth = self.smooth_data(linear_accels, window_size)
+                angular_accels_smooth = self.smooth_data(angular_accels, window_size)
+        
+        # 1. 线速度曲线
+        ax = axes[0, 0]
+        ax.plot(time_steps, linear_speeds, 'b-', alpha=0.6, label='原始', linewidth=1)
+        if smooth and len(time_steps) >= window_size:
+            ax.plot(time_steps, linear_speeds_smooth, 'r-', label='平滑', linewidth=2)
+        ax.set_xlabel('时间 (s)')
+        ax.set_ylabel('线速度 (m/s)')
+        ax.set_title('线速度 vs 时间')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        
+        # 2. 角速度曲线
+        ax = axes[0, 1]
+        ax.plot(time_steps, angular_speeds, 'g-', alpha=0.6, label='原始', linewidth=1)
+        if smooth and len(time_steps) >= window_size:
+            ax.plot(time_steps, angular_speeds_smooth, 'r-', label='平滑', linewidth=2)
+        ax.set_xlabel('时间 (s)')
+        ax.set_ylabel('角速度 (rad/s)')
+        ax.set_title('角速度 vs 时间')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        
+        # 3. 线加速度曲线
+        ax = axes[1, 0]
+        if len(self.linear_accelerations) > 0:
+            ax.plot(acc_time_steps, linear_accels, 'b-', alpha=0.6, label='原始', linewidth=1)
+            if smooth and len(linear_accels) >= window_size:
+                ax.plot(acc_time_steps, linear_accels_smooth, 'r-', label='平滑', linewidth=2)
+            ax.set_xlabel('时间 (s)')
+            ax.set_ylabel('线加速度 (m/s²)')
+            ax.set_title('线加速度 vs 时间')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+        
+        # 4. 角加速度曲线
+        ax = axes[1, 1]
+        if len(self.angular_accelerations) > 0:
+            ax.plot(acc_time_steps, angular_accels, 'g-', alpha=0.6, label='原始', linewidth=1)
+            if smooth and len(angular_accels) >= window_size:
+                ax.plot(acc_time_steps, angular_accels_smooth, 'r-', label='平滑', linewidth=2)
+            ax.set_xlabel('时间 (s)')
+            ax.set_ylabel('角加速度 (rad/s²)')
+            ax.set_title('角加速度 vs 时间')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+        
+        # 5. 线加加速度曲线
+        ax = axes[2, 0]
+        if len(self.linear_jerks) > 0:
+            ax.plot(jerk_time_steps, linear_jerks, 'b-', alpha=0.6, label='原始', linewidth=1)
+            if smooth and len(linear_jerks) >= window_size:
+                linear_jerks_smooth = self.smooth_data(linear_jerks, window_size)
+                ax.plot(jerk_time_steps, linear_jerks_smooth, 'r-', label='平滑', linewidth=2)
+            ax.set_xlabel('时间 (s)')
+            ax.set_ylabel('线加加速度 (m/s³)')
+            ax.set_title('线加加速度 vs 时间')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+        
+        # 6. 角加加速度曲线
+        ax = axes[2, 1]
+        if len(self.angular_jerks) > 0:
+            ax.plot(jerk_time_steps, angular_jerks, 'g-', alpha=0.6, label='原始', linewidth=1)
+            if smooth and len(angular_jerks) >= window_size:
+                angular_jerks_smooth = self.smooth_data(angular_jerks, window_size)
+                ax.plot(jerk_time_steps, angular_jerks_smooth, 'r-', label='平滑', linewidth=2)
+            ax.set_xlabel('时间 (s)')
+            ax.set_ylabel('角加加速度 (rad/s³)')
+            ax.set_title('角加加速度 vs 时间')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"图像已保存到: {save_path}")
+        
+        plt.show()
+    
+    def print_statistics(self):
+        """打印统计信息"""
+        if len(self.linear_speeds) == 0:
+            print("没有可用的数据")
+            return
+            
+        print("=" * 50)
+        print("速度统计信息:")
+        print(f"总记录点数: {len(self.time_steps)}")
+        print(f"总时间: {self.time_steps[-1]:.3f} 秒")
+        print(f"时间步长: {self.dt:.6f} 秒")
+        print("=" * 50)
+        
+        # 线速度统计
+        lin_speeds = np.array(self.linear_speeds)
+        print(f"线速度 (m/s):")
+        print(f"  最大值: {lin_speeds.max():.3f}")
+        print(f"  最小值: {lin_speeds.min():.3f}")
+        print(f"  平均值: {lin_speeds.mean():.3f}")
+        print(f"  标准差: {lin_speeds.std():.3f}")
+        print("=" * 50)
+        
+        # 角速度统计
+        ang_speeds = np.array(self.angular_speeds)
+        print(f"角速度 (rad/s):")
+        print(f"  最大值: {ang_speeds.max():.3f}")
+        print(f"  最小值: {ang_speeds.min():.3f}")
+        print(f"  平均值: {ang_speeds.mean():.3f}")
+        print(f"  标准差: {ang_speeds.std():.3f}")
+        print("=" * 50)
+        
+        # 线加速度统计
+        if len(self.linear_accelerations) > 0:
+            lin_accels = np.array(self.linear_accelerations)
+            print(f"线加速度 (m/s²):")
+            print(f"  最大值: {lin_accels.max():.3f}")
+            print(f"  最小值: {lin_accels.min():.3f}")
+            print(f"  平均值: {lin_accels.mean():.3f}")
+            print(f"  标准差: {lin_accels.std():.3f}")
+            print("=" * 50)
+        
+        # 角加速度统计
+        if len(self.angular_accelerations) > 0:
+            ang_accels = np.array(self.angular_accelerations)
+            print(f"角加速度 (rad/s²):")
+            print(f"  最大值: {ang_accels.max():.3f}")
+            print(f"  最小值: {ang_accels.min():.3f}")
+            print(f"  平均值: {ang_accels.mean():.3f}")
+            print(f"  标准差: {ang_accels.std():.3f}")
+            print("=" * 50)
+    
