@@ -105,7 +105,7 @@ class TutorialEnv(DirectRLEnv):
         max_vals = 5  # 相机最远探测距离m
         depth_frame = torch.nan_to_num(
             depth_frame,
-            nan=0.0,
+            nan=5.0,
             posinf=max_vals,  # depth_frame[depth_frame != float('inf')].max(),
             neginf=0,  # depth_frame.min()
         )

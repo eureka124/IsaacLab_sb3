@@ -3,7 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg
 from isaaclab.sensors import CameraCfg, ContactSensorCfg
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
@@ -11,7 +10,6 @@ from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 from tutorial.assets.five_in_drone import FIVE_IN_DRONE
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
-from isaaclab.sensors import CameraCfg, ContactSensorCfg
 import numpy as np
 from gymnasium import spaces
 
@@ -135,7 +133,7 @@ for i, (pos, ra, hei) in enumerate(obstacle_positions):
 @configclass
 class TutorialEnvCfg(DirectRLEnvCfg):
     # env
-    decimation = 20  # 20个dt进行一次决策
+    decimation = 5  # 5个dt进行一次决策
     episode_length_s = 40  # 导航任务最长时间40s
 
     action_space = spaces.Box(
@@ -151,7 +149,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     observation_space = {"camera": [3, 16, 12], "robot-state": 4}
     state_space = 0
     # simulation
-    sim: SimulationCfg = SimulationCfg(dt=1 / 100, render_interval=decimation)
+    sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
 
     # scene
     scene: InteractiveSceneCfg = MySceneCfg(
