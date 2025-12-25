@@ -83,15 +83,17 @@ def quaternion_to_rotation_matrix(quaternion: torch.Tensor) -> torch.Tensor:
 class DSLPIDController(nn.Module):
     def __init__(self, dt: float, g: float, uav_params) -> None:
         super().__init__()
-        # 针对 24Hz (decimation=5) 优化的增益
-        self.P_COEFF_FOR = nn.Parameter(torch.tensor([0.8, 0.8, 3.0]))
-        self.I_COEFF_FOR = nn.Parameter(torch.tensor([0.01, 0.01, 0.02]))
-        self.D_COEFF_FOR = nn.Parameter(torch.tensor([0.6, 0.6, 2.5]))
+        # 根据用户提供的参数调整:
+        # kp_lin = 2.0 (对应 D_COEFF_FOR)
+        # kp_ang = 1.2, izz = 0.006 => D_COEFF_TOR[2] = 0.0072
+        # 用户在外部计算了 target_vel_z = 4*error_z，因此这里 P_COEFF_FOR 设为 0
+        self.P_COEFF_FOR = nn.Parameter(torch.tensor([0.0, 0.0, 0.0]))
+        self.I_COEFF_FOR = nn.Parameter(torch.tensor([0.0, 0.0, 0.0]))
+        self.D_COEFF_FOR = nn.Parameter(torch.tensor([2.0, 2.0, 2.0]))  # 对应 kp_lin
 
-        # 降低姿态增益以减少低频控制下的震荡
-        self.P_COEFF_TOR = nn.Parameter(torch.tensor([40000.0, 40000.0, 30000.0]))
-        self.I_COEFF_TOR = nn.Parameter(torch.tensor([0.0, 0.0, 200.0]))
-        self.D_COEFF_TOR = nn.Parameter(torch.tensor([12000.0, 12000.0, 8000.0]))
+        self.P_COEFF_TOR = nn.Parameter(torch.tensor([0.3, 0.3, 0.01]))
+        self.I_COEFF_TOR = nn.Parameter(torch.tensor([0.0, 0.0, 0.0]))
+        self.D_COEFF_TOR = nn.Parameter(torch.tensor([0.1, 0.1, 0.0072]))
 
         self.PWM2RPM_SCALE = 0.2685
         self.PWM2RPM_CONST = 4070.3

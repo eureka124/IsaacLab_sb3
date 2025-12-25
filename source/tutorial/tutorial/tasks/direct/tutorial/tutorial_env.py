@@ -10,7 +10,6 @@ from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from .tutorial_env_cfg import TutorialEnvCfg
 from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
 from isaaclab.markers import VisualizationMarkers
-import isaaclab.utils.math as math_utils
 
 from .dsl_pid_controller import DSLPIDController
 from tensordict import TensorDict
@@ -39,14 +38,14 @@ class TutorialEnv(DirectRLEnv):
         # 5寸无人机大约 0.5kg
         self.uav_mass = 0.5
         uav_params = {"mass": self.uav_mass}
-        self.rl_dt = self.cfg.sim.dt * self.cfg.decimation
         self.controller = DSLPIDController(
-            dt=self.rl_dt, g=-9.81, uav_params=uav_params
+            dt=self.cfg.sim.dt, g=-9.81, uav_params=uav_params
         ).to(self.device)
         self.controller_state = TensorDict(
             {}, batch_size=self.num_envs, device=self.device
         )
         self.target_pos_setpoint = torch.zeros((self.num_envs, 3), device=self.device)
+        self.target_yaw_setpoint = torch.zeros((self.num_envs, 1), device=self.device)
 
     def _setup_scene(self):
         self.robot = self.scene["robot_cfg"]
@@ -107,26 +106,38 @@ class TutorialEnv(DirectRLEnv):
         angvel = self.robot.data.root_ang_vel_w
         state = torch.cat([pos, quat, vel, angvel], dim=-1)
 
-        # 构造控制目标
-        # actions 是 [vx, vy]
-        target_vel = torch.zeros((self.num_envs, 3), device=self.device)
-        target_vel[:, 0:2] = self.actions
+        # 1. 计算机头朝向 (从四元数)
+        w, x, y, z = torch.unbind(quat, dim=-1)
+        x1 = w * w + x * x - y * y - z * z
+        y1 = 2 * (x * y + w * z)
+        horizon_direction = torch.stack((x1, y1, torch.zeros_like(y1)), dim=-1)
+        normalized_direction = horizon_direction / (
+            torch.norm(horizon_direction, dim=-1, keepdim=True) + 1e-6
+        )
 
-        # 维持高度 z=2
+        # 2. 构造控制目标
+        # actions[:, 0] 是前进速度, actions[:, 1] 是绕Z轴旋转角速度
+        target_vel_xy = normalized_direction[:, :2] * self.actions[:, 0:1]
+
+        # 维持高度 z=2 的垂直速度指令
         target_z = 2.0
-        # XY 轴通过积分速度更新目标位置，Z 轴固定目标高度
-        self.target_pos_setpoint[:, 0:2] += target_vel[:, 0:2] * self.rl_dt
+        error_z = target_z - pos[:, 2:3]
+        target_vel_z = 4.0 * error_z + 0.1  # 对应用户提供的 4*error_z + 0.1
+
+        target_vel = torch.cat([target_vel_xy, target_vel_z], dim=-1)
+
+        # 目标偏航角速度
+        target_yaw_rate = self.actions[:, 1:2]
+
+        # 更新目标位置 (用于位置环，虽然 XY 增益现在设为 0)
+        self.target_pos_setpoint[:, 0:2] += target_vel_xy * self.cfg.sim.dt
         self.target_pos_setpoint[:, 2] = target_z
 
-        # 目标垂直速度设为 0，让 PID 负责维持高度
-        target_vel[:, 2] = 0.0
-
-        target_yaw = torch.zeros(
-            (self.num_envs, 1), device=self.device
-        )  # 假设目标偏航角为0
+        # 构造控制器输入 [target_pos, target_vel, target_yaw]
+        self.target_yaw_setpoint += target_yaw_rate * self.cfg.sim.dt
 
         control_target = torch.cat(
-            [self.target_pos_setpoint, target_vel, target_yaw], dim=-1
+            [self.target_pos_setpoint, target_vel, self.target_yaw_setpoint], dim=-1
         )
 
         # 调用控制器获取归一化 RPM 指令 [-1, 1] 以及推力和力矩
@@ -171,9 +182,7 @@ class TutorialEnv(DirectRLEnv):
         # 2. 设置螺旋桨转速 (可视化)
         rpms = torch.sqrt(torch.clamp((cmd + 1) / 2, min=0.0)) * self.controller.MAX_RPM
         # 转换为弧度/秒
-        import math
-
-        joint_vel_targets = rpms * (2 * math.pi / 60.0)
+        joint_vel_targets = rpms * (2 * torch.pi / 60.0)
         # 根据 five_in_drone.py 的初始状态设置符号: m1: +, m2: -, m3: +, m4: -
         joint_vel_targets[:, 1] *= -1
         joint_vel_targets[:, 3] *= -1
