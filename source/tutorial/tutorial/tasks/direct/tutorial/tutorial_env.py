@@ -371,6 +371,11 @@ class TutorialEnv(DirectRLEnv):
         # 将yaw角度转换为四元数
         target_quat = yaw_to_quaternion(target_yaw)  # shape: (num_reset_envs, 4)
         # print("Target yaw angles for reset envs:", target_yaw)
+
+        # 确保四元数归一化（双重保险）
+        quat_norm = torch.norm(target_quat, dim=-1, keepdim=True)
+        target_quat = target_quat / (quat_norm + 1e-8)
+
         # 设置机器人朝向目标点
         default_root_state[:, 3:7] = target_quat
 
@@ -388,8 +393,8 @@ class TutorialEnv(DirectRLEnv):
 
         # 初始化控制器的目标点为当前重置后的位置和朝向
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
-        # 从四元数提取 yaw
-        w, x, y, z = torch.unbind(default_root_state[:, 3:7], dim=-1)
+        # 从归一化后的四元数提取 yaw
+        w, x, y, z = torch.unbind(target_quat, dim=-1)
         self.target_yaw_setpoint[env_ids] = torch.atan2(
             2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)
         ).unsqueeze(-1)
@@ -520,18 +525,23 @@ def yaw_to_quaternion(yaw: torch.Tensor) -> torch.Tensor:
     Args:
         yaw: 形状为(num_envs,)的yaw角度张量（单位：弧度）
     Returns:
-        quaternions: 形状为(num_envs, 4)的四元数张量
+        quaternions: 形状为(num_envs, 4)的四元数张量（归一化）
     """
     half_yaw = yaw * 0.5
     cy = torch.cos(half_yaw)
     sy = torch.sin(half_yaw)
 
     # 四元数表示 (w, x, y, z)
-    quaternions = torch.zeros((yaw.shape[0], 4), device=yaw.device)
+    quaternions = torch.zeros((yaw.shape[0], 4), device=yaw.device, dtype=yaw.dtype)
     quaternions[:, 0] = cy  # w
     quaternions[:, 1] = 0.0  # x
     quaternions[:, 2] = 0.0  # y
     quaternions[:, 3] = sy  # z
+
+    # 显式归一化以确保数值稳定性
+    norm = torch.sqrt(quaternions[:, 0] ** 2 + quaternions[:, 3] ** 2).unsqueeze(-1)
+    quaternions = quaternions / (norm + 1e-8)
+
     return quaternions
 
 
