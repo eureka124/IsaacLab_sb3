@@ -133,7 +133,7 @@ for i, (pos, ra, hei) in enumerate(obstacle_positions):
 @configclass
 class TutorialEnvCfg(DirectRLEnvCfg):
     # env
-    decimation = 5  # 5个dt进行一次决策
+    decimation = 10  # 5个dt进行一次决策
     episode_length_s = 40  # 导航任务最长时间40s
 
     action_space = spaces.Box(
@@ -142,8 +142,6 @@ class TutorialEnvCfg(DirectRLEnvCfg):
         shape=(2,),  # 动作空间的形状，2表示两个连续动作
         dtype=np.float32,
     )  # 连续动作空间，表示机器人的线速度和角速度
-    decimation = 5  # 控制频率与模拟频率的比率
-    episode_length_s = 5.0
     # - spaces definition
     # observation_space = 4
     observation_space = {"camera": [3, 16, 12], "robot-state": 4}

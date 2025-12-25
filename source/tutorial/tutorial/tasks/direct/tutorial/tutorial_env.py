@@ -10,6 +10,7 @@ from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from .tutorial_env_cfg import TutorialEnvCfg
 from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
 from isaaclab.markers import VisualizationMarkers
+from omni_drones.controllers import LeePositionController
 
 
 class TutorialEnv(DirectRLEnv):
@@ -26,6 +27,26 @@ class TutorialEnv(DirectRLEnv):
         marker_cfg.prim_path = "/Visuals/Command/goal_position"
         self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
         self.img_buffers = [DepthImageBuffer() for _ in range(self.cfg.scene.num_envs)]
+
+        # 初始化 LeePositionController
+        uav_params = {
+            "name": "hummingbird",
+            "mass": 0.5,
+            "inertia": {"xx": 0.0023, "yy": 0.0023, "zz": 0.004},
+            "rotor_configuration": {
+                "rotor_angles": [0.785, 3.927, 5.498, 2.356],
+                "arm_lengths": [0.15, 0.15, 0.15, 0.15],
+                "force_constants": [8.54858e-06, 8.54858e-06, 8.54858e-06, 8.54858e-06],
+                "moment_constants": [1.6e-07, 1.6e-07, 1.6e-07, 1.6e-07],
+                "directions": [-1, -1, 1, 1],
+                "max_rotation_velocities": [838, 838, 838, 838],
+            },
+        }
+        self.controller = LeePositionController(g=9.81, uav_params=uav_params).to(
+            self.device
+        )
+        self.target_pos_setpoint = torch.zeros((self.num_envs, 3), device=self.device)
+        self.target_yaw_setpoint = torch.zeros((self.num_envs, 1), device=self.device)
 
         # [超时次数, 碰撞次数, 到达次数]
         self.success_rate_count = torch.zeros(3, dtype=torch.float32)
@@ -83,19 +104,94 @@ class TutorialEnv(DirectRLEnv):
         self.actions = actions.clone()
 
     def _apply_action(self) -> None:
-        # print("_apply_action")
-        now_v = torch.zeros((self.num_envs, 6), device=self.device)
-        now_v[:, 0:2] = self.actions  # vx, vy
+        # 1. 获取当前状态
+        pos = self.robot.data.root_pos_w
+        quat = self.robot.data.root_quat_w
+        vel = self.robot.data.root_lin_vel_w
+        angvel = self.robot.data.root_ang_vel_w
 
-        # z轴控制，简单的高度保持
-        self.target_z = 2
-        robot_pos = self.robot.data.root_pos_w.clone()
-        robot_pos_z = robot_pos[:, 2]
-        error_z = self.target_z - robot_pos_z
-        vz = now_v[:, 2]  # 形状 (num_envs,1)
-        vz.copy_(error_z + 0.1)  # 简单的 P 控制器
-        now_v[:, 2] = vz
-        self.robot.write_root_velocity_to_sim(now_v, env_ids=None)
+        # 2. 计算机头朝向 (用于将 vx 动作转为世界系速度)
+        w, x, y, z = torch.unbind(quat, dim=-1)
+        x1 = w * w + x * x - y * y - z * z
+        y1 = 2 * (x * y + w * z)
+        horizon_direction = torch.stack((x1, y1, torch.zeros_like(y1)), dim=-1)
+        normalized_direction = horizon_direction / (
+            torch.norm(horizon_direction, dim=-1, keepdim=True) + 1e-6
+        )
+
+        # 3. 构造控制目标
+        # actions[:, 0] 是前进速度, actions[:, 1] 是绕Z轴旋转角速度
+        target_vel_xy = normalized_direction[:, :2] * self.actions[:, 0:1]
+        target_z = 2.0
+        error_z = target_z - pos[:, 2:3]
+        target_vel_z = 4.0 * error_z + 0.1
+
+        target_vel = torch.cat([target_vel_xy, target_vel_z], dim=-1)
+        target_yaw_rate = self.actions[:, 1:2]
+
+        # 积分更新目标位置和偏航角
+        self.target_pos_setpoint[:, 0:2] += target_vel_xy * self.cfg.sim.dt
+        self.target_pos_setpoint[:, 2] = target_z
+        self.target_yaw_setpoint += target_yaw_rate * self.cfg.sim.dt
+
+        # 4. 调用 LeePositionController
+        # Lee 控制器期望: root_state (13), target_pos (3), target_vel (3), target_acc (3), target_yaw (1)
+        target_acc = torch.zeros_like(target_vel)
+        state = torch.cat([pos, quat, vel, angvel], dim=-1)
+
+        # compute 返回的是归一化的电机指令 [-1, 1]
+        cmd = self.controller.compute(
+            root_state=state,
+            target_pos=self.target_pos_setpoint,
+            target_vel=target_vel,
+            target_acc=target_acc,
+            target_yaw=self.target_yaw_setpoint,
+        )
+
+        # 5. 从电机指令还原物理力和力矩 (用于 set_external_force_and_torque)
+        # cmd = (mixer @ [ang_acc, thrust].T).T / max_thrusts * 2 - 1
+        # 我们通过逆运算获取 thrust 和 ang_acc
+        real_cmd = (cmd + 1) / 2 * self.controller.max_thrusts
+
+        # ang_acc_thrust = (mixer_pinverse @ real_cmd.T).T
+        # 注意: LeePositionController 内部使用了 mixer = A.T @ (A @ A.T).inverse() @ I
+        # 所以 ang_acc_thrust = [ang_acc, thrust]
+        # 我们直接使用伪逆还原
+        mixer_pinv = torch.linalg.pinv(self.controller.mixer)
+        ang_acc_thrust = (mixer_pinv @ real_cmd.unsqueeze(-1)).squeeze(-1)
+
+        ang_acc = ang_acc_thrust[:, :3]
+        thrust = ang_acc_thrust[:, 3]
+
+        # 计算力矩: torque = I @ ang_acc
+        # 从控制器中获取惯性矩阵 I
+        # LeePositionController 内部 I 是 diag(xx, yy, zz, 1)
+        # 我们只需要前 3x3 部分
+        I_diag = torch.tensor(
+            [
+                self.controller.mixer.shape[0],  # 这是一个占位符，我们需要实际的 I
+            ],
+            device=self.device,
+        )
+
+        # 实际上，我们可以直接应用 thrust 和 torque
+        # 为了简化，我们直接从 ang_acc 和 thrust 构造
+        forces_local = torch.zeros((self.num_envs, 1, 3), device=self.device)
+        forces_local[:, 0, 2] = thrust
+
+        # torque = I * ang_acc.
+        # 我们从 uav_params 中已知的惯性参数计算
+        inertia = torch.tensor([0.0023, 0.0023, 0.004], device=self.device)
+        torques_local = (ang_acc * inertia).unsqueeze(1)
+
+        self.robot.set_external_force_and_torque(
+            forces_local, torques_local, body_ids=[0], is_global=False
+        )
+
+        # 6. 设置螺旋桨转速 (可视化)
+        rpms = torch.sqrt(torch.clamp((cmd + 1) / 2, min=0.0)) * 838  # max_rot_vel
+        joint_vel_targets = rpms * (2 * torch.pi / 60.0)  # 假设单位转换
+        self.robot.write_joint_velocity_to_sim(joint_vel_targets, env_ids=None)
 
     def _get_norm_depth_image(self) -> torch.Tensor:
         depth_frame = (
@@ -289,6 +385,14 @@ class TutorialEnv(DirectRLEnv):
         # 重置图像缓冲区
         for env_id in env_ids:
             self.img_buffers[env_id].clear_buffer()
+
+        # 初始化控制器的目标点为当前重置后的位置和朝向
+        self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
+        # 从四元数提取 yaw
+        w, x, y, z = torch.unbind(default_root_state[:, 3:7], dim=-1)
+        self.target_yaw_setpoint[env_ids] = torch.atan2(
+            2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)
+        ).unsqueeze(-1)
 
 
 class DepthImageBuffer:
