@@ -10,6 +10,10 @@ from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from .tutorial_env_cfg import TutorialEnvCfg
 from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
 from isaaclab.markers import VisualizationMarkers
+import isaaclab.utils.math as math_utils
+
+from .dsl_pid_controller import DSLPIDController
+from tensordict import TensorDict
 
 
 class TutorialEnv(DirectRLEnv):
@@ -30,6 +34,19 @@ class TutorialEnv(DirectRLEnv):
         # [超时次数, 碰撞次数, 到达次数]
         self.success_rate_count = torch.zeros(3, dtype=torch.float32)
         self.last_condition_state = False
+
+        # 初始化 DSLPID 控制器
+        # 5寸无人机大约 0.5kg
+        self.uav_mass = 0.5
+        uav_params = {"mass": self.uav_mass}
+        self.rl_dt = self.cfg.sim.dt * self.cfg.decimation
+        self.controller = DSLPIDController(
+            dt=self.rl_dt, g=-9.81, uav_params=uav_params
+        ).to(self.device)
+        self.controller_state = TensorDict(
+            {}, batch_size=self.num_envs, device=self.device
+        )
+        self.target_pos_setpoint = torch.zeros((self.num_envs, 3), device=self.device)
 
     def _setup_scene(self):
         self.robot = self.scene["robot_cfg"]
@@ -83,19 +100,84 @@ class TutorialEnv(DirectRLEnv):
         self.actions = actions.clone()
 
     def _apply_action(self) -> None:
-        # print("_apply_action")
-        now_v = torch.zeros((self.num_envs, 6), device=self.device)
-        now_v[:, 0:2] = self.actions  # vx, vy
+        # 获取当前状态
+        pos = self.robot.data.root_pos_w
+        quat = self.robot.data.root_quat_w
+        vel = self.robot.data.root_lin_vel_w
+        angvel = self.robot.data.root_ang_vel_w
+        state = torch.cat([pos, quat, vel, angvel], dim=-1)
 
-        # z轴控制，简单的高度保持
-        self.target_z = 2
-        robot_pos = self.robot.data.root_pos_w.clone()
-        robot_pos_z = robot_pos[:, 2]
-        error_z = self.target_z - robot_pos_z
-        vz = now_v[:, 2]  # 形状 (num_envs,1)
-        vz.copy_(error_z + 0.1)  # 简单的 P 控制器
-        now_v[:, 2] = vz
-        self.robot.write_root_velocity_to_sim(now_v, env_ids=None)
+        # 构造控制目标
+        # actions 是 [vx, vy]
+        target_vel = torch.zeros((self.num_envs, 3), device=self.device)
+        target_vel[:, 0:2] = self.actions
+
+        # 维持高度 z=2
+        target_z = 2.0
+        # XY 轴通过积分速度更新目标位置，Z 轴固定目标高度
+        self.target_pos_setpoint[:, 0:2] += target_vel[:, 0:2] * self.rl_dt
+        self.target_pos_setpoint[:, 2] = target_z
+
+        # 目标垂直速度设为 0，让 PID 负责维持高度
+        target_vel[:, 2] = 0.0
+
+        target_yaw = torch.zeros(
+            (self.num_envs, 1), device=self.device
+        )  # 假设目标偏航角为0
+
+        control_target = torch.cat(
+            [self.target_pos_setpoint, target_vel, target_yaw], dim=-1
+        )
+
+        # 调用控制器获取归一化 RPM 指令 [-1, 1] 以及推力和力矩
+        cmd, self.controller_state, scalar_thrust, target_torque = self.controller(
+            state, control_target, self.controller_state
+        )
+
+        # 1. 应用推力和力矩到机身 (物理仿真)
+        # 注意：不能直接使用 target_torque，因为它是 PWM 单位。
+        # 我们从控制器输出的电机指令 cmd (归一化 RPM^2) 计算物理力和力矩。
+        real_cmd = torch.clamp((cmd + 1) / 2.0, min=0.0, max=1.0)
+        f_max = self.controller.KF * (self.controller.MAX_RPM**2)
+        motor_forces = real_cmd * f_max  # 每个电机的推力 (N)
+
+        # 总推力 (沿局部 Z 轴)
+        total_thrust = torch.sum(motor_forces, dim=-1)
+
+        # 计算力矩 (Nm)
+        # 5寸无人机臂长 L 约为 0.15m
+        L = 0.15
+        # 根据 MIXER_MATRIX 对应的电机索引 [3, 2, 1, 0] 计算
+        f3, f2, f1, f0 = (
+            motor_forces[:, 0],
+            motor_forces[:, 1],
+            motor_forces[:, 2],
+            motor_forces[:, 3],
+        )
+        torque_x = (f0 + f1 - f2 - f3) * L * 0.5
+        torque_y = (f1 + f2 - f0 - f3) * L * 0.5
+        # 偏航力矩系数 (通常为推力系数的 1%~2%)
+        torque_z = (f1 + f3 - f0 - f2) * 0.015
+
+        forces_local = torch.zeros((self.num_envs, 1, 3), device=self.device)
+        forces_local[:, 0, 2] = total_thrust
+        torques_local = torch.stack([torque_x, torque_y, torque_z], dim=-1).unsqueeze(1)
+
+        # 应用力和力矩到根节点 (body_id=0)
+        self.robot.set_external_force_and_torque(
+            forces_local, torques_local, body_ids=[0], is_global=False
+        )
+
+        # 2. 设置螺旋桨转速 (可视化)
+        rpms = torch.sqrt(torch.clamp((cmd + 1) / 2, min=0.0)) * self.controller.MAX_RPM
+        # 转换为弧度/秒
+        import math
+
+        joint_vel_targets = rpms * (2 * math.pi / 60.0)
+        # 根据 five_in_drone.py 的初始状态设置符号: m1: +, m2: -, m3: +, m4: -
+        joint_vel_targets[:, 1] *= -1
+        joint_vel_targets[:, 3] *= -1
+        self.robot.write_joint_velocity_to_sim(joint_vel_targets, env_ids=None)
 
     def _get_norm_depth_image(self) -> torch.Tensor:
         depth_frame = (
@@ -289,6 +371,12 @@ class TutorialEnv(DirectRLEnv):
         # 重置图像缓冲区
         for env_id in env_ids:
             self.img_buffers[env_id].clear_buffer()
+
+        # 重置控制器状态
+        self.controller_state[env_ids] = TensorDict(
+            {}, batch_size=len(env_ids), device=self.device
+        )
+        self.target_pos_setpoint[env_ids] = self.robot.data.root_pos_w[env_ids]
 
 
 class DepthImageBuffer:
