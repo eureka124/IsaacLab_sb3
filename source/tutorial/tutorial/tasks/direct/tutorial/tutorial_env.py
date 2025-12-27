@@ -49,7 +49,10 @@ class TutorialEnv(DirectRLEnv):
         self.target_yaw_setpoint = torch.zeros((self.num_envs, 1), device=self.device)
 
         # [超时次数, 碰撞次数, 到达次数]
-        self.success_rate_count = torch.zeros(3, dtype=torch.float32)
+        self.success_rate_count = torch.zeros(
+            3, dtype=torch.float32, device=self.device
+        )
+        self.total_episodes = 0
         self.last_condition_state = False
 
     def _setup_scene(self):
@@ -124,7 +127,7 @@ class TutorialEnv(DirectRLEnv):
         target_vel_xy = normalized_direction[:, :2] * self.actions[:, 0:1]
         target_z = 2.0
         error_z = target_z - pos[:, 2:3]
-        target_vel_z = 4.0 * error_z + 0.1
+        target_vel_z = 4.0 * error_z
 
         target_vel = torch.cat([target_vel_xy, target_vel_z], dim=-1)
         target_yaw_rate = self.actions[:, 1:2]
@@ -162,17 +165,6 @@ class TutorialEnv(DirectRLEnv):
 
         ang_acc = ang_acc_thrust[:, :3]
         thrust = ang_acc_thrust[:, 3]
-
-        # 计算力矩: torque = I @ ang_acc
-        # 从控制器中获取惯性矩阵 I
-        # LeePositionController 内部 I 是 diag(xx, yy, zz, 1)
-        # 我们只需要前 3x3 部分
-        I_diag = torch.tensor(
-            [
-                self.controller.mixer.shape[0],  # 这是一个占位符，我们需要实际的 I
-            ],
-            device=self.device,
-        )
 
         # 实际上，我们可以直接应用 thrust 和 torque
         # 为了简化，我们直接从 ang_acc 和 thrust 构造
@@ -271,6 +263,11 @@ class TutorialEnv(DirectRLEnv):
             penalty_smooth,
             self.arrived,
         )  # print(self.robot.data)
+
+        # 检查 total_reward 是否包含 NaN 值，如果有则中断程序
+        if torch.isnan(total_reward).any():
+            raise RuntimeError("total_reward contains NaN values, interrupting program")
+
         return total_reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -299,17 +296,24 @@ class TutorialEnv(DirectRLEnv):
         self.collided = collided
 
         # 3. 统计信息 (确保在 __init__ 中初始化了这些变量)
+        num_resets = (
+            time_out.sum().item() + collided.sum().item() + arrived.sum().item()
+        )
         self.success_rate_count[0] += time_out.sum().item()
         self.success_rate_count[1] += collided.sum().item()
         self.success_rate_count[2] += arrived.sum().item()
+        self.total_episodes += num_resets
+
         current_sum = sum(self.success_rate_count)
         # 每 100 次事件打印一次
         if current_sum > 0 and current_sum % 100 == 0:
             if not self.last_condition_state:  # 防止同一步重复打印
-                print(
-                    f"Stats [Timeout, Collision, Arrived]: {self.success_rate_count / self.success_rate_count.sum().item() * 100}"
+                success_rates = (
+                    self.success_rate_count / self.success_rate_count.sum().item() * 100
                 )
-                # print(f"Last Reward: {self.allreward}") # 确保 self.allreward 存在
+                print(
+                    f"Stats [Timeout, Collision, Arrived]: [{success_rates[0]:.2f}%, {success_rates[1]:.2f}%, {success_rates[2]:.2f}%]"
+                )
                 self.last_condition_state = True
                 self.success_rate_count[:] = 0
         else:
@@ -326,6 +330,26 @@ class TutorialEnv(DirectRLEnv):
         if env_ids is None:
             env_ids = self.robot._ALL_INDICES
         super()._reset_idx(env_ids)
+
+        # 记录成功率到 TensorBoard (通过 extras)
+        if (
+            len(env_ids) > 0 and self.total_episodes >= 100
+        ):  # 至少有100个episode后才记录
+            if "log" not in self.extras:
+                self.extras["log"] = dict()
+
+            total = self.success_rate_count.sum().item()
+            if total > 0:
+                # 计算成功率百分比
+                timeout_rate = (self.success_rate_count[0] / total * 100).item()
+                collision_rate = (self.success_rate_count[1] / total * 100).item()
+                success_rate = (self.success_rate_count[2] / total * 100).item()
+
+                # 记录到 extras，这将被写入 TensorBoard
+                self.extras["log"]["Success_Rate/timeout"] = timeout_rate
+                self.extras["log"]["Success_Rate/collision"] = collision_rate
+                self.extras["log"]["Success_Rate/arrived"] = success_rate
+                self.extras["log"]["Success_Rate/total_episodes"] = self.total_episodes
 
         default_root_state = self.robot.data.default_root_state[env_ids].clone()
         # print("Resetting envs:", env_ids)
