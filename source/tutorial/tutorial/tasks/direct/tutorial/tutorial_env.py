@@ -8,9 +8,10 @@ import isaaclab.sim as sim_utils
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from .tutorial_env_cfg import TutorialEnvCfg
-from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
+from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG  # isort: skip
 from isaaclab.markers import VisualizationMarkers
 from omni_drones.controllers import LeePositionController
+from isaaclab.utils.math import quat_from_matrix
 
 
 class TutorialEnv(DirectRLEnv):
@@ -26,6 +27,13 @@ class TutorialEnv(DirectRLEnv):
         # 目标位置可视化
         marker_cfg.prim_path = "/Visuals/Command/goal_position"
         self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
+
+        # 速度方向箭头可视化
+        arrow_cfg = RED_ARROW_X_MARKER_CFG.copy()
+        arrow_cfg.markers["arrow"].scale = (2, 0.4, 0.4)  # 默认缩放
+        arrow_cfg.prim_path = "/Visuals/Command/velocity_arrow"
+        self.vel_arrow_visualizer = VisualizationMarkers(arrow_cfg)
+
         self.img_buffer = DepthImageBuffer(self.cfg.scene.num_envs, self.device)
 
         # 初始化 LeePositionController
@@ -202,6 +210,41 @@ class TutorialEnv(DirectRLEnv):
         joint_vel_targets = rpms * (2 * torch.pi / 60.0)  # 假设单位转换
         self.robot.write_joint_velocity_to_sim(joint_vel_targets, env_ids=None)
 
+    def _update_velocity_arrow(self):
+        # 获取当前速度
+        vel = self.robot.data.root_lin_vel_w
+        speed = torch.norm(vel, dim=-1, keepdim=True)
+
+        # 计算位置：在无人机上方 0.5m
+        pos = self.robot.data.root_pos_w + torch.tensor([0, 0, 0.5], device=self.device)
+
+        # 计算朝向：将 X 轴对齐到速度方向
+        # 归一化速度向量作为前向向量 (X)
+        forward = vel / (speed + 1e-6)
+        # 假设世界上方为 Z 轴
+        up = torch.tensor([0.0, 0.0, 1.0], device=self.device).expand_as(forward)
+        # 计算右向向量 (Y) = Up x Forward
+        right = torch.cross(up, forward, dim=-1)
+        right = right / (torch.norm(right, dim=-1, keepdim=True) + 1e-6)
+        # 重新计算上向向量 (Z) = Forward x Right
+        actual_up = torch.cross(forward, right, dim=-1)
+
+        # 构造旋转矩阵 [X, Y, Z]
+        rot_mat = torch.stack([forward, right, actual_up], dim=-1)
+        # 转换为四元数
+        quat = quat_from_matrix(rot_mat)
+
+        # 动态调整箭头长度，使其与速度成正比 (可选)
+        # 这里我们让箭头长度 = 速度大小 * 0.5，最小 0.1
+        scale_x = speed * 0.5
+        scales = torch.cat(
+            [scale_x, torch.full_like(scale_x, 0.1), torch.full_like(scale_x, 0.1)],
+            dim=-1,
+        )
+
+        # 更新可视化
+        self.vel_arrow_visualizer.visualize(pos, quat, scales=scales)
+
     def _get_norm_depth_image(self) -> torch.Tensor:
         depth_frame = (
             self.scene["camera"].data.output["distance_to_image_plane"].clone()
@@ -242,6 +285,8 @@ class TutorialEnv(DirectRLEnv):
         )  # shape: (num_envs, 4)
 
         observations = {"policy": {"robot-state": obs, "camera": camera_observation}}
+        # 更新速度箭头可视化
+        self._update_velocity_arrow()
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
