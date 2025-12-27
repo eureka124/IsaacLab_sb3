@@ -113,24 +113,41 @@ class TutorialEnv(DirectRLEnv):
         vel = self.robot.data.root_lin_vel_w
         angvel = self.robot.data.root_ang_vel_w
 
-        # 2. 计算机头朝向 (用于将 vx 动作转为世界系速度)
+        # 2. 计算机头朝向和侧向 (用于将 vx, vy 动作转为世界系速度)
         w, x, y, z = torch.unbind(quat, dim=-1)
-        x1 = w * w + x * x - y * y - z * z
-        y1 = 2 * (x * y + w * z)
-        horizon_direction = torch.stack((x1, y1, torch.zeros_like(y1)), dim=-1)
-        normalized_direction = horizon_direction / (
-            torch.norm(horizon_direction, dim=-1, keepdim=True) + 1e-6
+        # 前向向量 (机体系 x 轴在世界系下的投影)
+        forward_x = w * w + x * x - y * y - z * z
+        forward_y = 2 * (x * y + w * z)
+        forward_direction = torch.stack(
+            (forward_x, forward_y, torch.zeros_like(forward_y)), dim=-1
+        )
+        forward_direction = forward_direction / (
+            torch.norm(forward_direction, dim=-1, keepdim=True) + 1e-6
+        )
+        # 侧向向量 (机体系 y 轴在世界系下的投影，简化为水平面内与前向垂直)
+        side_direction = torch.stack(
+            (
+                -forward_direction[:, 1],
+                forward_direction[:, 0],
+                torch.zeros_like(forward_y),
+            ),
+            dim=-1,
         )
 
         # 3. 构造控制目标
-        # actions[:, 0] 是前进速度, actions[:, 1] 是绕Z轴旋转角速度
-        target_vel_xy = normalized_direction[:, :2] * self.actions[:, 0:1]
+        # actions[:, 0] 是vx, actions[:, 1] vy
+        target_vel_xy = (
+            forward_direction[:, :2] * self.actions[:, 0:1]
+            + side_direction[:, :2] * self.actions[:, 1:2]
+        )
+
+        # 高度控制交给 Lee 控制器：设置目标高度为 2.0，目标垂直速度为 0
         target_z = 2.0
-        error_z = target_z - pos[:, 2:3]
-        target_vel_z = 4.0 * error_z
+        target_vel_z = torch.zeros((self.num_envs, 1), device=self.device)
 
         target_vel = torch.cat([target_vel_xy, target_vel_z], dim=-1)
-        target_yaw_rate = self.actions[:, 1:2]
+        # 既然动作空间用于 vx, vy，偏航角速度设为 0
+        target_yaw_rate = torch.zeros((self.num_envs, 1), device=self.device)
 
         # 积分更新目标位置和偏航角
         self.target_pos_setpoint[:, 0:2] += target_vel_xy * self.cfg.sim.dt
@@ -219,8 +236,6 @@ class TutorialEnv(DirectRLEnv):
         diff_body = quat_rotate_inverse(robot_quat, diff_global)
         relative_position = diff_body[:, :2]
 
-        # 归一化
-        relative_position /= torch.norm(relative_position, dim=-1, keepdim=True) + 1e-8
         last_action = self.actions
         obs = torch.cat(
             (relative_position, last_action), dim=-1
@@ -322,8 +337,7 @@ class TutorialEnv(DirectRLEnv):
         # 4. 决定重置的环境
         reset_envs = (
             arrived | collided | time_out
-        )  # 通常超时也需要重置，除非由外部 runner 处理
-
+        )  # 通常超时也需要重置，除非由外部 runner 处理W
         return reset_envs, time_out
 
     def _reset_idx(self, env_ids):
