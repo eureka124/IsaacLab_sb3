@@ -345,26 +345,6 @@ class TutorialEnv(DirectRLEnv):
             env_ids = self.robot._ALL_INDICES
         super()._reset_idx(env_ids)
 
-        # 记录成功率到 TensorBoard (通过 extras)
-        if (
-            len(env_ids) > 0 and self.total_episodes >= 100
-        ):  # 至少有100个episode后才记录
-            if "log" not in self.extras:
-                self.extras["log"] = dict()
-
-            total = self.success_rate_count.sum().item()
-            if total > 0:
-                # 计算成功率百分比
-                timeout_rate = (self.success_rate_count[0] / total * 100).item()
-                collision_rate = (self.success_rate_count[1] / total * 100).item()
-                success_rate = (self.success_rate_count[2] / total * 100).item()
-
-                # 记录到 extras，这将被写入 TensorBoard
-                self.extras["log"]["Success_Rate/timeout"] = timeout_rate
-                self.extras["log"]["Success_Rate/collision"] = collision_rate
-                self.extras["log"]["Success_Rate/arrived"] = success_rate
-                self.extras["log"]["Success_Rate/total_episodes"] = self.total_episodes
-
         default_root_state = self.robot.data.default_root_state[env_ids].clone()
         # print("Resetting envs:", env_ids)
         # 将重置的环境位置偏移到对应环境的原点位置
@@ -533,7 +513,11 @@ def compute_rewards(
     arrived: torch.Tensor,
 ):
     total_reward = (
-        reward_velocity * 1.0 - penalty_smooth * 0.1 - collided * 20.0 + arrived * 5.0
+        reward_velocity * 1.0
+        + 1.0
+        - penalty_smooth * 0.1
+        - collided * 20.0
+        + arrived * 5.0
     )
     return total_reward.unsqueeze(-1)  # 返回 (num_envs, 1) 通常更安全
 
