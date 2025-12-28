@@ -145,8 +145,8 @@ class TutorialEnv(DirectRLEnv):
         # 3. 构造控制目标
         # actions[:, 0] 是vx, actions[:, 1] vy
         target_vel_xy = (
-            forward_direction[:, :2] * self.actions[:, 0:1]
-            + side_direction[:, :2] * self.actions[:, 1:2]
+            forward_direction[:, :2] * self.actions[:, 0]
+            + side_direction[:, :2] * self.actions[:, 1]
         )
 
         # 高度控制交给 Lee 控制器：设置目标高度为 2.0，目标垂直速度为 0
@@ -154,13 +154,10 @@ class TutorialEnv(DirectRLEnv):
         target_vel_z = torch.zeros((self.num_envs, 1), device=self.device)
 
         target_vel = torch.cat([target_vel_xy, target_vel_z], dim=-1)
-        # 既然动作空间用于 vx, vy，偏航角速度设为 0
-        target_yaw_rate = torch.zeros((self.num_envs, 1), device=self.device)
 
-        # 积分更新目标位置和偏航角
+        # 积分更新目标位置
         self.target_pos_setpoint[:, 0:2] += target_vel_xy * self.cfg.sim.dt
         self.target_pos_setpoint[:, 2] = target_z
-        self.target_yaw_setpoint += target_yaw_rate * self.cfg.sim.dt
 
         # 4. 调用 LeePositionController
         # Lee 控制器期望: root_state (13), target_pos (3), target_vel (3), target_acc (3), target_yaw (1)
@@ -343,7 +340,7 @@ class TutorialEnv(DirectRLEnv):
         self.distances = distances  # 保存用于可能的奖励计算
 
         # 判断是否到达 (阈值 0.1 米)
-        arrived = distances <= 0.1
+        arrived = distances <= 0.4
         self.arrived = arrived
 
         # 2. 判断是否碰撞
