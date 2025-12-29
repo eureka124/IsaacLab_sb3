@@ -145,8 +145,8 @@ class TutorialEnv(DirectRLEnv):
         # 3. 构造控制目标
         # actions[:, 0] 是vx, actions[:, 1] vy
         target_vel_xy = (
-            forward_direction[:, :2] * self.actions[:, 0]
-            + side_direction[:, :2] * self.actions[:, 1]
+            forward_direction[:, :2] * self.actions[:, 0:1]
+            + side_direction[:, :2] * self.actions[:, 1:2]
         )
 
         # 高度控制交给 Lee 控制器：设置目标高度为 2.0，目标垂直速度为 0
