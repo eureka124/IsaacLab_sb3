@@ -396,9 +396,6 @@ class TutorialEnv(DirectRLEnv):
         # print("Resetting envs:", env_ids)
         # 将重置的环境位置偏移到对应环境的原点位置
         default_root_state[:, :3] += self.scene.env_origins[env_ids]
-        default_root_state[:, 0] += self.cfg.scene.env_spacing / 2.0 + 0.5
-        default_root_state[:, 1] += self.cfg.scene.env_spacing / 2.0 + 0.5
-
         # 设置机器人速度
         self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
 
