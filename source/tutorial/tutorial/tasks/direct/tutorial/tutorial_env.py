@@ -55,8 +55,13 @@ class TutorialEnv(DirectRLEnv):
         )
         self.target_pos_setpoint = torch.zeros((self.num_envs, 3), device=self.device)
         self.target_yaw_setpoint = torch.zeros((self.num_envs, 1), device=self.device)
-
+        # [超时次数, 碰撞次数, 到达次数]
+        self.success_rate_count = torch.zeros(
+            3, dtype=torch.float32, device=self.device
+        )
+        self.total_episodes = 0
         self.last_condition_state = False
+        self.test = True  # 是否为测试模式（打印成功率等信息）
 
     def _setup_scene(self):
         self.robot = self.scene["robot_cfg"]
@@ -346,6 +351,29 @@ class TutorialEnv(DirectRLEnv):
         # 阈值建议提高到 1.0，避免物理引擎噪声导致的误判
         collided = (contact_magnitudes > 1.0).any(dim=1)
         self.collided = collided
+        # 3. 统计信息 (确保在 __init__ 中初始化了这些变量)
+        num_resets = (
+            time_out.sum().item() + collided.sum().item() + arrived.sum().item()
+        )
+        self.success_rate_count[0] += time_out.sum().item()
+        self.success_rate_count[1] += collided.sum().item()
+        self.success_rate_count[2] += arrived.sum().item()
+        self.total_episodes += num_resets
+
+        current_sum = sum(self.success_rate_count)
+        # 每 100 次事件打印一次
+        if self.test and current_sum > 0 and current_sum % 100 == 0:
+            if not self.last_condition_state:  # 防止同一步重复打印
+                success_rates = (
+                    self.success_rate_count / self.success_rate_count.sum().item() * 100
+                )
+                print(
+                    f"Stats [Timeout, Collision, Arrived]: [{success_rates[0]:.2f}%, {success_rates[1]:.2f}%, {success_rates[2]:.2f}%]"
+                )
+                self.last_condition_state = True
+                self.success_rate_count[:] = 0
+        else:
+            self.last_condition_state = False
 
         # 4. 决定重置的环境
         reset_envs = (
