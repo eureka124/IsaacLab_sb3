@@ -9,23 +9,24 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 from tutorial.assets.five_in_drone import FIVE_IN_DRONE
+from tutorial.assets.iris import IRIS_CFG
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 import numpy as np
 from gymnasium import spaces
 
-_robot_spawn_cfg = FIVE_IN_DRONE.spawn.copy()
+_robot_spawn_cfg = IRIS_CFG.spawn.copy()
 _robot_spawn_cfg.activate_contact_sensors = True
 
 
 @configclass
 class MySceneCfg(InteractiveSceneCfg):
     # 无人机模型
-    robot_cfg: ArticulationCfg = FIVE_IN_DRONE.replace(
+    robot_cfg: ArticulationCfg = IRIS_CFG.replace(
         prim_path="/World/envs/env_.*/Robot", spawn=_robot_spawn_cfg
     )
     # 无人机主观深度相机
     camera = CameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/body/front_cam",
+        prim_path="{ENV_REGEX_NS}/Robot/base_link/front_cam",
         update_period=0.04,
         height=16,
         width=12,  # 深度相机的输出(16, 12)
@@ -42,7 +43,7 @@ class MySceneCfg(InteractiveSceneCfg):
     )
     # 接触传感器
     contact_forces = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/prop.*",
+        prim_path="{ENV_REGEX_NS}/Robot/base_link",
         update_period=0.0,
         history_length=6,
         debug_vis=True,

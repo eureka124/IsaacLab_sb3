@@ -12,6 +12,7 @@ from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG  # isort:
 from isaaclab.markers import VisualizationMarkers
 from omni_drones.controllers import LeePositionController
 from isaaclab.utils.math import quat_from_matrix
+from matplotlib import pyplot as plt
 
 
 class TutorialEnv(DirectRLEnv):
@@ -38,15 +39,20 @@ class TutorialEnv(DirectRLEnv):
 
         # 初始化 LeePositionController
         uav_params = {
-            "name": "hummingbird",
-            "mass": 0.5,
-            "inertia": {"xx": 0.0023, "yy": 0.0023, "zz": 0.004},
+            "name": "iris",
+            "mass": 1.52,
+            "inertia": {"xx": 0.0347563, "yy": 0.0458929, "zz": 0.0977},
             "rotor_configuration": {
-                "rotor_angles": [0.785, 3.927, 5.498, 2.356],
-                "arm_lengths": [0.15, 0.15, 0.15, 0.15],
+                "rotor_angles": [-0.533708, 2.565218, 0.533708, -2.565218],
+                "arm_lengths": [0.255539, 0.238537, 0.255539, 0.238537],
                 "force_constants": [8.54858e-06, 8.54858e-06, 8.54858e-06, 8.54858e-06],
-                "moment_constants": [1.6e-07, 1.6e-07, 1.6e-07, 1.6e-07],
-                "directions": [-1, -1, 1, 1],
+                "moment_constants": [
+                    1.3677728816219314e-07,
+                    1.3677728816219314e-07,
+                    1.3677728816219314e-07,
+                    1.3677728816219314e-07,
+                ],
+                "directions": [1, 1, -1, -1],
                 "max_rotation_velocities": [838, 838, 838, 838],
             },
         }
@@ -195,7 +201,7 @@ class TutorialEnv(DirectRLEnv):
 
         # torque = I * ang_acc.
         # 我们从 uav_params 中已知的惯性参数计算
-        inertia = torch.tensor([0.0023, 0.0023, 0.004], device=self.device)
+        inertia = torch.tensor([0.0347563, 0.0458929, 0.0977], device=self.device)
         torques_local = (ang_acc * inertia).unsqueeze(1)
 
         self.robot.set_external_force_and_torque(
