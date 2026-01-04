@@ -22,7 +22,7 @@ _robot_spawn_cfg.activate_contact_sensors = True
 class MySceneCfg(InteractiveSceneCfg):
     # 无人机模型
     robot_cfg: ArticulationCfg = IRIS_CFG.replace(
-        prim_path="/World/envs/env_.*/Robot", spawn=_robot_spawn_cfg
+        prim_path="{ENV_REGEX_NS}/Robot", spawn=_robot_spawn_cfg
     )
     # 无人机主观深度相机
     camera = CameraCfg(
@@ -42,8 +42,8 @@ class MySceneCfg(InteractiveSceneCfg):
         ),
     )
     # 接触传感器
-    contact_forces = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/rotor.*",
+    contact_forces: ContactSensorCfg = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/.*",
         update_period=0.0,
         history_length=6,
         debug_vis=True,
