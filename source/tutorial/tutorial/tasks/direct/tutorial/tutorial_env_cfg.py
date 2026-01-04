@@ -43,7 +43,7 @@ class MySceneCfg(InteractiveSceneCfg):
     )
     # 接触传感器
     contact_forces = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/base_link",
+        prim_path="{ENV_REGEX_NS}/Robot/rotor.*",
         update_period=0.0,
         history_length=6,
         debug_vis=True,
