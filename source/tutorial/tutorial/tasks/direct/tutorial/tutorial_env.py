@@ -645,7 +645,7 @@ def compute_rewards(
         + 1.0  # 存活奖励
         - penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 20.0  # 碰撞惩罚
-        + arrived * 200.0  # 到达奖励
+        # + arrived * 200.0  # 到达奖励
     )
     return total_reward.unsqueeze(-1)  # 返回 (num_envs, 1) 通常更安全
 
