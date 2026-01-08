@@ -61,7 +61,7 @@ models:
       - flatten
       activations: leaky_relu
     - name: net
-      input: concatenate([features_extractor, STATES["relative-position"]])
+      input: concatenate([features_extractor, STATES["robot-state"]])
       layers:
       - 256
       - 256
