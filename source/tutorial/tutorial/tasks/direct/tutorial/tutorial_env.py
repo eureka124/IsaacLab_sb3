@@ -433,88 +433,111 @@ class TutorialEnv(DirectRLEnv):
 
         len_env_ids = len(env_ids)
 
-        # Grid Logic
-        rand_vals = torch.rand((len_env_ids, 100), device=self.device)
-        perm = torch.argsort(rand_vals, dim=1)  # (len_env_ids, 100)
+        if self.cfg.random_reset:
+            # Grid Logic
+            rand_vals = torch.rand((len_env_ids, 100), device=self.device)
+            perm = torch.argsort(rand_vals, dim=1)  # (len_env_ids, 100)
 
-        obs_grid_indices = perm[:, :60]  # (len_env_ids, 60)
-        start_grid_indices = perm[:, 60]  # (len_env_ids,)
-        goal_grid_indices = perm[:, 61]  # (len_env_ids,)
+            obs_grid_indices = perm[:, :60]  # (len_env_ids, 60)
+            start_grid_indices = perm[:, 60]  # (len_env_ids,)
+            goal_grid_indices = perm[:, 61]  # (len_env_ids,)
 
-        def get_grid_coords_batch(indices):
-            row = indices // self.grid_size
-            col = indices % self.grid_size
-            # -4.5 to 4.5
-            x_center = (row - (self.grid_size / 2 - 0.5)) * self.cell_size
-            y_center = (col - (self.grid_size / 2 - 0.5)) * self.cell_size
-            return x_center, y_center
+            def get_grid_coords_batch(indices):
+                row = indices // self.grid_size
+                col = indices % self.grid_size
+                # -4.5 to 4.5
+                x_center = (row - (self.grid_size / 2 - 0.5)) * self.cell_size
+                y_center = (col - (self.grid_size / 2 - 0.5)) * self.cell_size
+                return x_center, y_center
 
-        # Place Obstacles
-        if len(self.obstacles) > 0:
-            for k in range(len(self.obstacles)):
-                if k >= 60:
-                    break
+            # Place Obstacles
+            if len(self.obstacles) > 0:
+                for k in range(len(self.obstacles)):
+                    if k >= 60:
+                        break
 
-                grid_idx = obs_grid_indices[:, k]
-                cx, cy = get_grid_coords_batch(grid_idx)
-                r = self.obstacle_radii[k]
+                    grid_idx = obs_grid_indices[:, k]
+                    cx, cy = get_grid_coords_batch(grid_idx)
+                    r = self.obstacle_radii[k]
 
-                max_offset = (self.cell_size / 2.0) - r
-                max_offset = torch.clamp(max_offset, min=0.0)
+                    max_offset = (self.cell_size / 2.0) - r
+                    max_offset = torch.clamp(max_offset, min=0.0)
 
-                offset_x = (
-                    torch.rand(len_env_ids, device=self.device) * 2 - 1
-                ) * max_offset
-                offset_y = (
-                    torch.rand(len_env_ids, device=self.device) * 2 - 1
-                ) * max_offset
+                    offset_x = (
+                        torch.rand(len_env_ids, device=self.device) * 2 - 1
+                    ) * max_offset
+                    offset_y = (
+                        torch.rand(len_env_ids, device=self.device) * 2 - 1
+                    ) * max_offset
 
-                obs_x = cx + offset_x
-                obs_y = cy + offset_y
+                    obs_x = cx + offset_x
+                    obs_y = cy + offset_y
 
-                obs_defaults = (
-                    self.obstacles[k].data.default_root_state[env_ids].clone()
-                )
-                obs_defaults[:, 0] = obs_x + self.scene.env_origins[env_ids, 0]
-                obs_defaults[:, 1] = obs_y + self.scene.env_origins[env_ids, 1]
+                    obs_defaults = (
+                        self.obstacles[k].data.default_root_state[env_ids].clone()
+                    )
+                    obs_defaults[:, 0] = obs_x + self.scene.env_origins[env_ids, 0]
+                    obs_defaults[:, 1] = obs_y + self.scene.env_origins[env_ids, 1]
 
-                self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
-                self.obstacles[k].write_root_velocity_to_sim(
-                    obs_defaults[:, 7:], env_ids
-                )
+                    self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
+                    self.obstacles[k].write_root_velocity_to_sim(
+                        obs_defaults[:, 7:], env_ids
+                    )
 
-        # Place Robot (Start)
-        cx_s, cy_s = get_grid_coords_batch(start_grid_indices)
-        offset_x_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.3
-        )
-        offset_y_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.3
-        )
-        start_x = cx_s + offset_x_s
-        start_y = cy_s + offset_y_s
+            # Place Robot (Start)
+            cx_s, cy_s = get_grid_coords_batch(start_grid_indices)
+            offset_x_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
+                self.cell_size / 2 - 0.3
+            )
+            offset_y_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
+                self.cell_size / 2 - 0.3
+            )
+            start_x = cx_s + offset_x_s
+            start_y = cy_s + offset_y_s
 
-        # Overwrite Robot X, Y
-        default_root_state[:, 0] = start_x + self.scene.env_origins[env_ids, 0]
-        default_root_state[:, 1] = start_y + self.scene.env_origins[env_ids, 1]
+            # Overwrite Robot X, Y
+            default_root_state[:, 0] = start_x + self.scene.env_origins[env_ids, 0]
+            default_root_state[:, 1] = start_y + self.scene.env_origins[env_ids, 1]
+
+            # Place Target (Goal)
+            cx_g, cy_g = get_grid_coords_batch(goal_grid_indices)
+            offset_x_g = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
+                self.cell_size / 2 - 0.2
+            )
+            offset_y_g = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
+                self.cell_size / 2 - 0.2
+            )
+            target_x = cx_g + offset_x_g
+            target_y = cy_g + offset_y_g
+            target_z = torch.ones_like(target_x) * 2.0
+
+            xyz = torch.stack((target_x, target_y, target_z), dim=-1)
+            self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
+        else:
+             # Disable Obstacles or Reset to Default
+            if len(self.obstacles) > 0:
+                for k in range(len(self.obstacles)):
+                     obs_defaults = (
+                        self.obstacles[k].data.default_root_state[env_ids].clone()
+                    )
+                     obs_defaults[:, :3] += self.scene.env_origins[env_ids]
+                     self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
+                     self.obstacles[k].write_root_velocity_to_sim(
+                        obs_defaults[:, 7:], env_ids
+                    )
+            
+            # Robot uses default_root_state (no change needed)
+
+            # Target 2 meters in front of spawn
+            target_x = torch.zeros(len_env_ids, device=self.device) + 2.0
+            target_y = torch.zeros(len_env_ids, device=self.device)
+            target_z = torch.ones(len_env_ids, device=self.device) * 2.0
+
+            xyz = torch.stack((target_x, target_y, target_z), dim=-1)
+            self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
 
         # 设置机器人速度
         self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
-
-        # Place Target (Goal)
-        cx_g, cy_g = get_grid_coords_batch(goal_grid_indices)
-        offset_x_g = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.2
-        )
-        offset_y_g = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.2
-        )
-        target_x = cx_g + offset_x_g
-        target_y = cy_g + offset_y_g
-        target_z = torch.ones_like(target_x) * 2.0
-
-        xyz = torch.stack((target_x, target_y, target_z), dim=-1)
-        self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
 
         # 获取目标点相对机器人位置的yaw角度
         target_yaw = get_target_direction(

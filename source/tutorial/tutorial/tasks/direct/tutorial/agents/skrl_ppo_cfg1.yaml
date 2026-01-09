@@ -76,7 +76,7 @@ models:
       - 192
       activations: none
     - name: net
-      input: concatenate([features_extractor, STATES["relative-position"]])
+      input: concatenate([features_extractor, STATES["robot-state"]])
       layers:
       - 512
       - 512
