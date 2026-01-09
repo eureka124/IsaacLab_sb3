@@ -304,6 +304,9 @@ class TutorialEnv(DirectRLEnv):
         diff_body = quat_rotate_inverse(robot_quat, diff_global)
         relative_position = diff_body[:, :2]
 
+        # 计算机体坐标系下的相对偏航角 (relative yaw)
+        relative_yaw = torch.atan2(diff_body[:, 1], diff_body[:, 0]).unsqueeze(-1)
+
         last_action = self.actions
 
         # 获取机体坐标系下的速度 (vx, vy)
@@ -312,8 +315,8 @@ class TutorialEnv(DirectRLEnv):
         vel_xy = vel_b[:, :2]
 
         obs = torch.cat(
-            (relative_position, last_action, vel_xy), dim=-1
-        )  # shape: (num_envs, 6)
+            (relative_position, relative_yaw, last_action, vel_xy), dim=-1
+        )  # shape: (num_envs, 8)
 
         observations = {"policy": {"robot-state": obs, "camera": camera_observation}}
         # 更新速度箭头可视化
