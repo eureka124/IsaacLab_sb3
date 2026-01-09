@@ -171,11 +171,19 @@ class TutorialEnv(DirectRLEnv):
         )
 
         # 3. 构造控制目标
-        # actions[:, 0] 是vx, actions[:, 1] vy
+        # actions[:, 0] 是vx, actions[:, 1] vy, actions[:, 2] 是 yaw_rate
         target_vel_xy = (
             forward_direction[:, :2] * self.actions[:, 0:1]
             + side_direction[:, :2] * self.actions[:, 1:2]
         )
+
+        # 更新偏航角目标
+        target_yaw_rate = self.actions[:, 2:3]
+        self.target_yaw_setpoint += target_yaw_rate * self.cfg.sim.dt
+        # 限制在 -pi 到 pi 之间
+        self.target_yaw_setpoint = (self.target_yaw_setpoint + torch.pi) % (
+            2 * torch.pi
+        ) - torch.pi
 
         # 高度控制交给 Lee 控制器：设置目标高度为 2.0，目标垂直速度为 0
         target_z = 2.0
@@ -313,7 +321,7 @@ class TutorialEnv(DirectRLEnv):
 
         obs = torch.cat(
             (relative_position, last_action, vel_xy), dim=-1
-        )  # shape: (num_envs, 6)
+        )  # shape: (num_envs, 7)
 
         observations = {"policy": {"robot-state": obs, "camera": camera_observation}}
         # 更新速度箭头可视化
@@ -479,7 +487,9 @@ class TutorialEnv(DirectRLEnv):
                     obs_defaults[:, 0] = obs_x + self.scene.env_origins[env_ids, 0]
                     obs_defaults[:, 1] = obs_y + self.scene.env_origins[env_ids, 1]
 
-                    self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
+                    self.obstacles[k].write_root_pose_to_sim(
+                        obs_defaults[:, :7], env_ids
+                    )
                     self.obstacles[k].write_root_velocity_to_sim(
                         obs_defaults[:, 7:], env_ids
                     )
@@ -514,18 +524,20 @@ class TutorialEnv(DirectRLEnv):
             xyz = torch.stack((target_x, target_y, target_z), dim=-1)
             self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
         else:
-             # Disable Obstacles or Reset to Default
+            # Disable Obstacles or Reset to Default
             if len(self.obstacles) > 0:
                 for k in range(len(self.obstacles)):
-                     obs_defaults = (
+                    obs_defaults = (
                         self.obstacles[k].data.default_root_state[env_ids].clone()
                     )
-                     obs_defaults[:, :3] += self.scene.env_origins[env_ids]
-                     self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
-                     self.obstacles[k].write_root_velocity_to_sim(
+                    obs_defaults[:, :3] += self.scene.env_origins[env_ids]
+                    self.obstacles[k].write_root_pose_to_sim(
+                        obs_defaults[:, :7], env_ids
+                    )
+                    self.obstacles[k].write_root_velocity_to_sim(
                         obs_defaults[:, 7:], env_ids
                     )
-            
+
             # Robot uses default_root_state (no change needed)
 
             # Target 2 meters in front of spawn
