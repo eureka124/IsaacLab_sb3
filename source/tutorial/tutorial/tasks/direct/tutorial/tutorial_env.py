@@ -323,7 +323,9 @@ class TutorialEnv(DirectRLEnv):
             (relative_position, last_action, vel_xy), dim=-1
         )  # shape: (num_envs, 7)
 
-        observations = {"policy": {"robot-state": obs, "camera": camera_observation}}
+        observations = {
+            "policy": {"robot-state": obs, "camera": camera_observation},
+        }
         # 更新速度箭头可视化
         self._update_velocity_arrow()
         return observations
@@ -686,7 +688,7 @@ def compute_rewards(
         + 1.0  # 存活奖励
         - penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 20.0  # 碰撞惩罚
-        # + arrived * 200.0  # 到达奖励
+        + arrived * 200.0  # 到达奖励
     )
     return total_reward.unsqueeze(-1)  # 返回 (num_envs, 1) 通常更安全
 
