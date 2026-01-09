@@ -305,9 +305,15 @@ class TutorialEnv(DirectRLEnv):
         relative_position = diff_body[:, :2]
 
         last_action = self.actions
+
+        # 获取机体坐标系下的速度 (vx, vy)
+        vel_w = self.robot.data.root_lin_vel_w
+        vel_b = quat_rotate_inverse(robot_quat, vel_w)
+        vel_xy = vel_b[:, :2]
+
         obs = torch.cat(
-            (relative_position, last_action), dim=-1
-        )  # shape: (num_envs, 4)
+            (relative_position, last_action, vel_xy), dim=-1
+        )  # shape: (num_envs, 6)
 
         observations = {"policy": {"robot-state": obs, "camera": camera_observation}}
         # 更新速度箭头可视化

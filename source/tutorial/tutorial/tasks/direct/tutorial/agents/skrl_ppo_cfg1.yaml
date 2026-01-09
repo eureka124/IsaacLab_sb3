@@ -29,13 +29,18 @@ models:
           padding: 0
       - flatten
       activations: leaky_relu
+    - name: features_fc
+      input: features_extractor
+      layers:
+      - 192
+      activations: none
     - name: robot_state_extractor
       input: STATES["robot-state"]
       layers:
       - 192
       activations: leaky_relu
     - name: net
-      input: concatenate([features_extractor, robot_state_extractor])
+      input: concatenate([features_fc, robot_state_extractor])
       layers:
       - 512
       - 512
@@ -49,22 +54,32 @@ models:
       input: STATES["camera"]
       layers:
       - conv2d:
-          out_channels: 16
-          kernel_size: 8
-          stride: 4
+          out_channels: 32
+          kernel_size: 2
+          stride: 1
           padding: 0
       - conv2d:
-          out_channels: 32
-          kernel_size: 4
-          stride: 4
+          out_channels: 64
+          kernel_size: 3
+          stride: 1
+          padding: 0
+      - conv2d:
+          out_channels: 128
+          kernel_size: 3
+          stride: 1
           padding: 0
       - flatten
       activations: leaky_relu
+    - name: features_fc
+      input: features_extractor
+      layers:
+      - 192
+      activations: none
     - name: net
       input: concatenate([features_extractor, STATES["relative-position"]])
       layers:
-      - 256
-      - 256
+      - 512
+      - 512
       activations: leaky_relu
     output: ONE
 
