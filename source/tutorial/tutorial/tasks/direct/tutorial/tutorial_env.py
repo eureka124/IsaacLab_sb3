@@ -479,7 +479,9 @@ class TutorialEnv(DirectRLEnv):
                     obs_defaults[:, 0] = obs_x + self.scene.env_origins[env_ids, 0]
                     obs_defaults[:, 1] = obs_y + self.scene.env_origins[env_ids, 1]
 
-                    self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
+                    self.obstacles[k].write_root_pose_to_sim(
+                        obs_defaults[:, :7], env_ids
+                    )
                     self.obstacles[k].write_root_velocity_to_sim(
                         obs_defaults[:, 7:], env_ids
                     )
@@ -514,18 +516,20 @@ class TutorialEnv(DirectRLEnv):
             xyz = torch.stack((target_x, target_y, target_z), dim=-1)
             self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
         else:
-             # Disable Obstacles or Reset to Default
+            # Disable Obstacles or Reset to Default
             if len(self.obstacles) > 0:
                 for k in range(len(self.obstacles)):
-                     obs_defaults = (
+                    obs_defaults = (
                         self.obstacles[k].data.default_root_state[env_ids].clone()
                     )
-                     obs_defaults[:, :3] += self.scene.env_origins[env_ids]
-                     self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
-                     self.obstacles[k].write_root_velocity_to_sim(
+                    obs_defaults[:, :3] += self.scene.env_origins[env_ids]
+                    self.obstacles[k].write_root_pose_to_sim(
+                        obs_defaults[:, :7], env_ids
+                    )
+                    self.obstacles[k].write_root_velocity_to_sim(
                         obs_defaults[:, 7:], env_ids
                     )
-            
+
             # Robot uses default_root_state (no change needed)
 
             # Target 2 meters in front of spawn
@@ -674,7 +678,7 @@ def compute_rewards(
         + 1.0  # 存活奖励
         - penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 20.0  # 碰撞惩罚
-        # + arrived * 200.0  # 到达奖励
+        + arrived * 200.0  # 到达奖励
     )
     return total_reward.unsqueeze(-1)  # 返回 (num_envs, 1) 通常更安全
 
