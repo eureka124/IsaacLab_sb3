@@ -136,7 +136,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 10  # 5个dt进行一次决策
     episode_length_s = 40  # 导航任务最长时间40s
-    random_reset = False  # 是否随机重置环境
+    random_reset = True  # 是否随机重置环境
 
     action_space = spaces.Box(
         low=np.array([-0.1, -0.5, -1.0], dtype=np.float32),  # 每个维度的最小值
