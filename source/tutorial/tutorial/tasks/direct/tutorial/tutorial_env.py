@@ -60,6 +60,7 @@ class TutorialEnv(DirectRLEnv):
         self.controller = LeePositionController(g=9.81, uav_params=uav_params).to(
             self.device
         )
+        self.mixer_pinv = torch.linalg.pinv(self.controller.mixer)
         self.target_pos_setpoint = torch.zeros((self.num_envs, 3), device=self.device)
         self.target_yaw_setpoint = torch.zeros((self.num_envs, 1), device=self.device)
         # [超时次数, 碰撞次数, 到达次数]
@@ -218,8 +219,7 @@ class TutorialEnv(DirectRLEnv):
         # 注意: LeePositionController 内部使用了 mixer = A.T @ (A @ A.T).inverse() @ I
         # 所以 ang_acc_thrust = [ang_acc, thrust]
         # 我们直接使用伪逆还原
-        mixer_pinv = torch.linalg.pinv(self.controller.mixer)
-        ang_acc_thrust = (mixer_pinv @ real_cmd.unsqueeze(-1)).squeeze(-1)
+        ang_acc_thrust = (self.mixer_pinv @ real_cmd.unsqueeze(-1)).squeeze(-1)
 
         ang_acc = ang_acc_thrust[:, :3]
         thrust = ang_acc_thrust[:, 3]
