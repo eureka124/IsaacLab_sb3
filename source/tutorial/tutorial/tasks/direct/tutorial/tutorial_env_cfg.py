@@ -41,13 +41,14 @@ class MySceneCfg(InteractiveSceneCfg):
             pos=(0.1, 0.0, 0.0), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"
         ),
     )
+
     # 接触传感器
-    contact_forces: ContactSensorCfg = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/.*",
-        update_period=0.0,
-        history_length=6,
-        debug_vis=True,
-    )
+    # contact_forces: ContactSensorCfg = ContactSensorCfg(
+    #     prim_path="{ENV_REGEX_NS}/Robot/.*",
+    #     update_period=0.0,
+    #     history_length=6,
+    #     debug_vis=True,
+    # )
 
 
 # 定义多个静止障碍物的位置
@@ -136,7 +137,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 10  # 5个dt进行一次决策
     episode_length_s = 40  # 导航任务最长时间40s
-    random_reset = False  # 是否随机重置环境
+    random_reset = True  # 是否随机重置环境
 
     action_space = spaces.Box(
         low=np.array([-0.1, -0.5, -1.0], dtype=np.float32),  # 每个维度的最小值

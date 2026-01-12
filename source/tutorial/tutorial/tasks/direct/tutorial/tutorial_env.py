@@ -388,12 +388,26 @@ class TutorialEnv(DirectRLEnv):
         self.arrived = arrived
 
         # 2. 判断是否碰撞
-        # 获取接触力
-        contact_forces = self.scene["contact_forces"].data.net_forces_w
-        # 计算合力大小
-        contact_magnitudes = torch.norm(contact_forces, dim=-1)
-        # 阈值建议提高到 1.0，避免物理引擎噪声导致的误判
-        collided = (contact_magnitudes > 1.0).any(dim=1)
+        if len(self.obstacles) > 0:
+            # 机器人位置 (num_envs, 2)
+            robot_pos = self.robot.data.root_pos_w[:, :2]
+
+            # 障碍物位置 (num_obstacles, num_envs, 2)
+            obstacle_pos = torch.stack(
+                [obs.data.root_pos_w[:, :2] for obs in self.obstacles], dim=0
+            )
+
+            # 计算距离 (num_obstacles, num_envs)
+            dists = torch.norm(obstacle_pos - robot_pos.unsqueeze(0), dim=-1)
+
+            # 碰撞阈值 = 障碍物半径 + 机器人半径(安全距离)
+            robot_radius = 0.5  # 假设机器人半径为0.5米
+            thresholds = self.obstacle_radii.unsqueeze(1) + robot_radius
+
+            # 判断是否发生碰撞
+            collided = (dists < thresholds).any(dim=0)
+        else:
+            collided = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self.collided = collided
         # 3. 统计信息 (确保在 __init__ 中初始化了这些变量)
         num_resets = (
@@ -686,10 +700,15 @@ def compute_rewards(
     total_reward = (
         reward_velocity * 1.0  # 速度在目标方向的分量
         + 1.0  # 存活奖励
-        - penalty_smooth * 0.1  # 平滑度惩罚
+        # - penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 20.0  # 碰撞惩罚
         + arrived * 200.0  # 到达奖励
     )
+    # print("Total Reward:", total_reward)
+    # print("Reward Velocity:", reward_velocity)
+    # print("Penalty Smooth:", penalty_smooth)
+    # print("Collided:", collided)
+    # print("Arrived:", arrived)
     return total_reward.unsqueeze(-1)  # 返回 (num_envs, 1) 通常更安全
 
 
