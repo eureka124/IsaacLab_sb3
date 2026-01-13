@@ -283,17 +283,17 @@ class TutorialEnv(DirectRLEnv):
             self.scene["camera"].data.output["distance_to_image_plane"].clone()
         )
         # 归一化深度图
-        max_vals = 5  # 相机最远探测距离m
+        max_vals = 10.0  # 相机最远探测距离m
         depth_frame = torch.nan_to_num(
             depth_frame,
-            nan=5.0,
+            nan=10.0,
             posinf=max_vals,  # depth_frame[depth_frame != float('inf')].max(),
             neginf=0,  # depth_frame.min()
         )
         depth_frame[depth_frame >= max_vals] = max_vals
-        depth_norm = depth_frame / (max_vals + 1e-8)  # +1e-8防止除零
+        # depth_norm = depth_frame / (max_vals + 1e-8)  # +1e-8防止除零
         # print(depth_norm.shape) # (env_num, 1, 16, 12)
-        return depth_norm  # shape:[env_num, 1, 16, 12]
+        return depth_frame  # shape:[env_num, 1, 16, 12]
 
     def _get_observations(self) -> dict:
         depth_norm = self._get_norm_depth_image()
