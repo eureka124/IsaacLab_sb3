@@ -147,7 +147,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     )  # 连续动作空间，表示机器人的线速度(vx, vy)和偏航角速度(yaw_rate)
     # - spaces definition
     # observation_space = 4
-    observation_space = {"camera": [3, 16, 12], "robot-state": 6, "critic-state": 15}
+    observation_space = {"camera": [3, 16, 12], "robot-state": 7, "critic-state": 15}
     state_space = 0
     # simulation
     sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
