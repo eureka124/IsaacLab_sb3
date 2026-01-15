@@ -41,14 +41,13 @@ class MySceneCfg(InteractiveSceneCfg):
             pos=(0.1, 0.0, 0.0), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"
         ),
     )
-
     # 接触传感器
-    # contact_forces: ContactSensorCfg = ContactSensorCfg(
-    #     prim_path="{ENV_REGEX_NS}/Robot/.*",
-    #     update_period=0.0,
-    #     history_length=6,
-    #     debug_vis=True,
-    # )
+    contact_forces: ContactSensorCfg = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/.*",
+        update_period=0.0,
+        history_length=6,
+        debug_vis=True,
+    )
 
 
 # 定义多个静止障碍物的位置
@@ -137,17 +136,16 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 10  # 5个dt进行一次决策
     episode_length_s = 40  # 导航任务最长时间40s
-    random_reset = False  # 是否随机重置环境
 
     action_space = spaces.Box(
-        low=np.array([-0.1, -0.5, -1.0], dtype=np.float32),  # 每个维度的最小值
-        high=np.array([2.0, 0.5, 1.0], dtype=np.float32),  # 每个维度的最大值
-        shape=(3,),  # 动作空间的形状，3表示三个连续动作
+        low=np.array([-0.1, -0.5], dtype=np.float32),  # 每个维度的最小值
+        high=np.array([2.0, 0.5], dtype=np.float32),  # 每个维度的最大值
+        shape=(2,),  # 动作空间的形状，2表示两个连续动作
         dtype=np.float32,
-    )  # 连续动作空间，表示机器人的线速度(vx, vy)和偏航角速度(yaw_rate)
+    )  # 连续动作空间，表示机器人的线速度和角速度
     # - spaces definition
     # observation_space = 4
-    observation_space = {"camera": [3, 16, 12], "robot-state": 7, "critic-state": 15}
+    observation_space = {"camera": [3, 16, 12], "robot-state": 4}
     state_space = 0
     # simulation
     sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
