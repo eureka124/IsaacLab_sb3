@@ -76,7 +76,7 @@ models:
       - 192
       activations: none
     - name: net
-      input: concatenate([features_extractor, STATES["robot-state"], STATES["critic-state"]])
+      input: concatenate([features_fc, STATES["robot-state"], STATES["critic-state"]])
       layers:
       - 512
       - 512
