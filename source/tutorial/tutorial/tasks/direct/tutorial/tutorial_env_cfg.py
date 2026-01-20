@@ -3,12 +3,11 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 import isaaclab.sim as sim_utils
-from isaaclab.sensors import CameraCfg, ContactSensorCfg
+from isaaclab.sensors import CameraCfg
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
-from tutorial.assets.five_in_drone import FIVE_IN_DRONE
 from tutorial.assets.iris import IRIS_CFG
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 import numpy as np
@@ -146,7 +145,11 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     )  # 连续动作空间，表示机器人的线速度(vx, vy)和偏航角速度(yaw_rate)
     # - spaces definition
     # observation_space = 4
-    observation_space = {"camera": [3, 16, 12], "robot-state": 7, "critic-state": 15}
+    observation_space = {
+        "camera": spaces.Box(low=0, high=255, shape=(3, 16, 12), dtype=np.uint8),
+        "robot-state": 7,
+        "critic-state": 15,
+    }
     state_space = 0
     # simulation
     sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)

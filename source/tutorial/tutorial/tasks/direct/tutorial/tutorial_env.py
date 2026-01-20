@@ -14,6 +14,8 @@ from isaaclab.markers import VisualizationMarkers
 from omni_drones.controllers import LeePositionController
 from isaaclab.utils.math import quat_from_matrix
 from matplotlib import pyplot as plt
+import gymnasium as gym
+import numpy as np
 
 
 class TutorialEnv(DirectRLEnv):
@@ -21,6 +23,19 @@ class TutorialEnv(DirectRLEnv):
 
     def __init__(self, cfg: TutorialEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
+
+        # Update the observation space for camera to be uint8 [0, 255]
+        if (
+            isinstance(self.observation_space, gym.spaces.Dict)
+            and "camera" in self.observation_space.spaces
+        ):
+            self.observation_space.spaces["camera"] = gym.spaces.Box(
+                low=0,
+                high=255,
+                shape=self.observation_space.spaces["camera"].shape,
+                dtype=np.uint8,
+            )
+
         # print("__init__")
         # 创建可视化目标位置的标记
         self.target_pos = torch.zeros((self.cfg.scene.num_envs, 3), device=self.device)
@@ -284,12 +299,14 @@ class TutorialEnv(DirectRLEnv):
         max_vals = 10.0  # 相机最远探测距离m
         depth_frame = torch.nan_to_num(
             depth_frame,
-            nan=10.0,
-            posinf=max_vals,  # depth_frame[depth_frame != float('inf')].max(),
-            neginf=0,  # depth_frame.min()
+            nan=max_vals,
+            posinf=max_vals,
+            neginf=0.0,
         )
-        depth_frame[depth_frame >= max_vals] = max_vals
-        depth_frame = depth_frame / (max_vals + 1e-8)  # +1e-8防止除零
+        depth_frame = torch.clamp(depth_frame, min=0.0, max=max_vals)
+        depth_frame = depth_frame / max_vals
+        # 转换为 0-255 uint8
+        depth_frame = (depth_frame * 255.0).round().clamp(0, 255).to(torch.uint8)
         # print(depth_norm.shape) # (env_num, 1, 16, 12)
         return depth_frame  # shape:[env_num, 1, 16, 12]
 
@@ -679,7 +696,7 @@ def compute_rewards(
     # print("Penalty Smooth:", penalty_smooth)
     # print("Collided:", collided)
     # print("Arrived:", arrived)
-    return total_reward.unsqueeze(-1)  # 返回 (num_envs, 1) 通常更安全
+    return total_reward  # 返回 (num_envs,) 以匹配 SB3 预期
 
 
 # 偏航角转换为四元数
