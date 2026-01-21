@@ -190,6 +190,7 @@ def main(
             args_cli.max_iterations * agent_cfg["agent"]["rollouts"]
         )
     agent_cfg["trainer"]["close_environment_at_exit"] = False
+    agent_cfg["trainer"]["disable_progressbar"] = True
     # configure the ML framework into the global skrl variable
     if args_cli.ml_framework.startswith("jax"):
         skrl.config.jax.backend = "jax" if args_cli.ml_framework == "jax" else "numpy"

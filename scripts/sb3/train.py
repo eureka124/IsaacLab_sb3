@@ -316,7 +316,7 @@ def main(
         agent.learn(
             total_timesteps=n_timesteps,
             callback=callbacks,
-            progress_bar=True,
+            progress_bar=False,
             log_interval=None,
         )
     # save the final model
