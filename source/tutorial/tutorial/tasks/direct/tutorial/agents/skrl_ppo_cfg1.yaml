@@ -75,8 +75,15 @@ models:
       layers:
       - 192
       activations: none
+    # 建议：为了对称性，Value网络也可以加上 robot_state_extractor，或保持现状
+    network:
+    - name: robot_state_extractor
+      input: STATES["robot-state"]
+      layers:
+      - 192
+      activations: leaky_relu
     - name: net
-      input: concatenate([features_fc, STATES["robot-state"], STATES["critic-state"]])
+      input: concatenate([features_fc, robot_state_extractor, STATES["critic-state"]])
       layers:
       - 512
       - 512
@@ -85,7 +92,8 @@ models:
 
 memory:
   class: RandomMemory
-  memory_size: -1
+  # 修改点 1: 明确大小
+  memory_size: 512
 
 agent:
   class: PPO
@@ -98,7 +106,10 @@ agent:
   learning_rate_scheduler: KLAdaptiveLR
   learning_rate_scheduler_kwargs:
     kl_threshold: 0.016
-  state_preprocessor: RunningStandardScaler
+  # 修改点 2: 图像输入通常禁用 RunningStandardScaler，因为它会计算像素的均值方差
+  # 如果这里设为 null，请确保你的CNN能处理 0-255 的输入（或在网络第一层加除以255的处理）
+  # 这里的建议是先把这个改成 null 试试，或者保留但需警惕性能问题
+  state_preprocessor: null 
   state_preprocessor_kwargs: null
   value_preprocessor: RunningStandardScaler
   value_preprocessor_kwargs: null
