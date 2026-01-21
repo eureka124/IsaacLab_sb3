@@ -151,7 +151,7 @@ sys.path.append(
         "../../source/tutorial/tutorial/tasks/direct/tutorial/agents",
     )
 )
-from custom_extractor import CustomCombinedExtractor
+from custom_extractor import CustomCombinedExtractor, GodViewExtractor
 from custom_callback import IsaacLogCallback, CheckpointCallbackWithLimit
 
 
@@ -283,7 +283,13 @@ def main(
     # create agent from stable baselines
     # Modify policy_kwargs to include custom features extractor
     policy_kwargs = agent_cfg.get("policy_kwargs", {})
-    policy_kwargs["features_extractor_class"] = CustomCombinedExtractor
+    if (
+        "features_extractor_class" in policy_kwargs
+        and policy_kwargs["features_extractor_class"] == "GodViewExtractor"
+    ):
+        policy_kwargs["features_extractor_class"] = GodViewExtractor
+    else:
+        policy_kwargs["features_extractor_class"] = CustomCombinedExtractor
     agent_cfg["policy_kwargs"] = policy_kwargs
 
     agent = PPO(policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg)

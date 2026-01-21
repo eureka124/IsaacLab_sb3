@@ -1,10 +1,7 @@
-seed: 42
-
-# Models are instantiated using skrl's model instantiator utility
-# https://skrl.readthedocs.io/en/latest/api/utils/model_instantiators.html
+seed: 123
 models:
-  separate: False
-  policy: # see gaussian_model parameters
+  separate: True
+  policy:
     class: GaussianMixin
     clip_actions: False
     clip_log_std: True
@@ -12,43 +9,108 @@ models:
     max_log_std: 2.0
     initial_log_std: 0.0
     network:
-      - name: net
-        input: OBSERVATIONS
-        layers: [512, 256, 32]
-        activations: elu
+    - name: features_extractor
+      input: STATES["camera"]
+      layers:
+      - conv2d:
+          out_channels: 32
+          kernel_size: 2
+          stride: 1
+          padding: 0
+      - conv2d:
+          out_channels: 64
+          kernel_size: 3
+          stride: 1
+          padding: 0
+      - conv2d:
+          out_channels: 128
+          kernel_size: 3
+          stride: 1
+          padding: 0
+      - flatten
+      activations: leaky_relu
+    - name: features_fc
+      input: features_extractor
+      layers:
+      - 192
+      activations: none
+    - name: robot_state_extractor
+      input: STATES["robot-state"]
+      layers:
+      - 192
+      activations: none
+    - name: net
+      input: concatenate([features_fc, robot_state_extractor])
+      layers:
+      - 512
+      - 512
+      activations: leaky_relu
     output: ACTIONS
-  value: # see deterministic_model parameters
+  value:
     class: DeterministicMixin
     clip_actions: False
     network:
-      - name: net
-        input: OBSERVATIONS
-        layers: [32, 32]
-        activations: elu
+    - name: features_extractor
+      input: STATES["camera"]
+      layers:
+      - conv2d:
+          out_channels: 32
+          kernel_size: 2
+          stride: 1
+          padding: 0
+      - conv2d:
+          out_channels: 64
+          kernel_size: 3
+          stride: 1
+          padding: 0
+      - conv2d:
+          out_channels: 128
+          kernel_size: 3
+          stride: 1
+          padding: 0
+      - flatten
+      activations: leaky_relu
+    - name: features_fc
+      input: features_extractor
+      layers:
+      - 192
+      activations: none
+    # 建议：为了对称性，Value网络也可以加上 robot_state_extractor，或保持现状
+    - name: robot_state_extractor
+      input: STATES["robot-state"]
+      layers:
+      - 192
+      activations: none
+    - name: net
+      input: concatenate([features_fc, robot_state_extractor, STATES["critic-state"]])
+      layers:
+      - 512
+      - 512
+      activations: leaky_relu
     output: ONE
 
-# Rollout memory
-# https://skrl.readthedocs.io/en/latest/api/memories/random.html
 memory:
   class: RandomMemory
-  memory_size: -1 # automatically determined (same as agent:rollouts)
+  # 修改点 1: 明确大小
+  memory_size: 512
 
-# PPO agent configuration (field names are from PPO_DEFAULT_CONFIG)
-# https://skrl.readthedocs.io/en/latest/api/agents/ppo.html
 agent:
   class: PPO
-  rollouts: 32
-  learning_epochs: 8
-  mini_batches: 8
+  rollouts: 512
+  learning_epochs: 5
+  mini_batches: 4
   discount_factor: 0.99
   lambda: 0.95
-  learning_rate: 5.0e-04
+  learning_rate: 0.0003
   learning_rate_scheduler: KLAdaptiveLR
   learning_rate_scheduler_kwargs:
-    kl_threshold: 0.008
-  state_preprocessor: RunningStandardScaler
+    kl_threshold: 0.016
+  # 修改点 2: 图像输入通常禁用 RunningStandardScaler，因为它会计算像素的均值方差
+  # 如果这里设为 null，请确保你的CNN能处理 0-255 的输入（或在网络第一层加除以255的处理）
+  # 这里的建议是先把这个改成 null 试试，或者保留但需警惕性能问题
+  state_preprocessor: null 
   state_preprocessor_kwargs: null
-  value_preprocessor: RunningStandardScaler
+  value_preprocessor: null
   value_preprocessor_kwargs: null
   random_timesteps: 0
   learning_starts: 0
@@ -61,16 +123,13 @@ agent:
   kl_threshold: 0.0
   rewards_shaper_scale: 0.1
   time_limit_bootstrap: False
-  # logging and checkpoint
   experiment:
     directory: "quad"
     experiment_name: ""
-    write_interval: auto
+    write_interval: 500
     checkpoint_interval: auto
-
-# Sequential trainer
-# https://skrl.readthedocs.io/en/latest/api/trainers/sequential.html
 trainer:
   class: SequentialTrainer
-  timesteps: 48000
+  timesteps: 256000
   environment_info: log
+  close_environment_at_exit: false
