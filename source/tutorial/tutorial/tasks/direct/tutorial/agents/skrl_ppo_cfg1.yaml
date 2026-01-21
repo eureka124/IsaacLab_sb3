@@ -70,6 +70,7 @@ models:
           padding: 0
       - flatten
       activations: leaky_relu
+    network:
     - name: features_fc
       input: features_extractor
       layers:
