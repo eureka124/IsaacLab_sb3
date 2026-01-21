@@ -70,14 +70,12 @@ models:
           padding: 0
       - flatten
       activations: leaky_relu
-    network:
     - name: features_fc
       input: features_extractor
       layers:
       - 192
       activations: none
     # 建议：为了对称性，Value网络也可以加上 robot_state_extractor，或保持现状
-    network:
     - name: robot_state_extractor
       input: STATES["robot-state"]
       layers:
