@@ -38,7 +38,7 @@ models:
       input: STATES["robot-state"]
       layers:
       - 192
-      activations: leaky_relu
+      activations: none
     - name: net
       input: concatenate([features_fc, robot_state_extractor])
       layers:
@@ -80,7 +80,7 @@ models:
       input: STATES["robot-state"]
       layers:
       - 192
-      activations: leaky_relu
+      activations: none
     - name: net
       input: concatenate([features_fc, robot_state_extractor, STATES["critic-state"]])
       layers:
@@ -110,7 +110,7 @@ agent:
   # 这里的建议是先把这个改成 null 试试，或者保留但需警惕性能问题
   state_preprocessor: null 
   state_preprocessor_kwargs: null
-  value_preprocessor: RunningStandardScaler
+  value_preprocessor: null
   value_preprocessor_kwargs: null
   random_timesteps: 0
   learning_starts: 0
