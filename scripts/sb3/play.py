@@ -14,7 +14,8 @@ import os
 
 sys.path.append(
     os.path.join(
-        os.path.dirname(__file__), "../../source/sb3/sb3/tasks/direct/sb3/agents"
+        os.path.dirname(__file__),
+        "../../source/tutorial/tutorial/tasks/direct/tutorial/agents",
     )
 )
 from isaaclab.app import AppLauncher
@@ -118,7 +119,7 @@ import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils.hydra import hydra_task_config
 from isaaclab_tasks.utils.parse_cfg import get_checkpoint_path
 
-import sb3.tasks  # noqa: F401
+import tutorial.tasks  # noqa: F401
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)

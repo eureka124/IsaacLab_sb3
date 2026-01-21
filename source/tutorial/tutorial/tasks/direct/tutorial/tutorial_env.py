@@ -334,9 +334,14 @@ class TutorialEnv(DirectRLEnv):
         vel_b = quat_rotate_inverse(robot_quat, vel_w)
         vel_xy = vel_b[:, :2]
 
+        # 获取机体坐标系下的角速度 (yaw_rate)
+        ang_vel_w = self.robot.data.root_ang_vel_w
+        ang_vel_b = quat_rotate_inverse(robot_quat, ang_vel_w)
+        yaw_rate = ang_vel_b[:, 2:3]
+
         obs = torch.cat(
-            (relative_position, last_action, vel_xy), dim=-1
-        )  # shape: (num_envs, 7)
+            (relative_position, last_action, vel_xy, yaw_rate), dim=-1
+        )  # shape: (num_envs, 8)
 
         # Calculate privileged information (nearest 5 obstacles)
         if len(self.obstacles) > 0:

@@ -133,7 +133,7 @@ for i, (pos, ra, hei) in enumerate(obstacle_positions):
 @configclass
 class TutorialEnvCfg(DirectRLEnvCfg):
     # env
-    decimation = 10  # 5个dt进行一次决策
+    decimation = 5  # 5个dt进行一次决策
     episode_length_s = 40  # 导航任务最长时间40s
     random_reset = False  # 是否随机重置环境
 
@@ -147,7 +147,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     # observation_space = 4
     observation_space = {
         "camera": spaces.Box(low=0, high=255, shape=(3, 16, 12), dtype=np.uint8),
-        "robot-state": 7,
+        "robot-state": 8,
         "critic-state": 15,
     }
     state_space = 0
