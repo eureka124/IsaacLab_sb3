@@ -43,11 +43,11 @@ class CustomCombinedExtractor(BaseFeaturesExtractor):
         state_dim = robot_state_space.shape[0]
 
         # robot_state_extractor equivalent
-        self.robot_state_mlp = nn.Sequential(nn.Linear(state_dim, 192), nn.LeakyReLU())
+        self.robot_state_mlp = nn.Linear(state_dim, 192)
 
         # Calculate total features dim
         # Policy Net: concatenate([features_fc, robot_state_extractor])
-        self._features_dim = 192 + 192
+        self._features_dim = 192
 
         # Note about Value Function Asymmetry:
         # SKRL's Value function uses [features_extractor, robot-state, critic-state].
@@ -64,7 +64,7 @@ class CustomCombinedExtractor(BaseFeaturesExtractor):
         state_features = self.robot_state_mlp(observations["robot-state"])
 
         # 3. Concatenate
-        return torch.add([img_features, state_features], dim=1)
+        return torch.add(img_features, state_features)
 
 
 class GodViewExtractor(BaseFeaturesExtractor):
