@@ -64,16 +64,19 @@ class CustomCombinedExtractor(BaseFeaturesExtractor):
         state_features = self.robot_state_mlp(observations["robot-state"])
 
         # 3. Concatenate
-        return torch.cat([img_features, state_features], dim=1)
+        return torch.add([img_features, state_features], dim=1)
+
 
 class GodViewExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: gym.spaces.Dict):
         super().__init__(observation_space, features_dim=1)
-        
+
         # Calculate features dim
         robot_state_dim = observation_space["robot-state"].shape[0]
         critic_state_dim = observation_space["critic-state"].shape[0]
         self._features_dim = robot_state_dim + critic_state_dim
 
     def forward(self, observations) -> torch.Tensor:
-        return torch.cat([observations["robot-state"], observations["critic-state"]], dim=1)
+        return torch.cat(
+            [observations["robot-state"], observations["critic-state"]], dim=1
+        )

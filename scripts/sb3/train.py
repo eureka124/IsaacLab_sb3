@@ -260,7 +260,8 @@ def main(
     start_time = time.time()
 
     # wrap around environment for stable baselines
-    env = Sb3VecEnvWrapper(env, fast_variant=not args_cli.keep_all_info)
+    # Force fast_variant=False to ensure we get 'success', 'collided', 'time_out' in infos for logging
+    env = Sb3VecEnvWrapper(env, fast_variant=False)
 
     norm_keys = {"normalize_input", "normalize_value", "clip_obs"}
     norm_args = {}

@@ -104,6 +104,14 @@ class IsaacLogCallback(BaseCallback):
             c = info.get("collided", 0)
             t = info.get("time_out", 0)
 
+            # Convert tensors to float/bool
+            if hasattr(s, "item"):
+                s = s.item()
+            if hasattr(c, "item"):
+                c = c.item()
+            if hasattr(t, "item"):
+                t = t.item()
+
             # Check if episode terminated (any of these flags is true)
             if s or c or t:
                 self.total_episodes += 1
