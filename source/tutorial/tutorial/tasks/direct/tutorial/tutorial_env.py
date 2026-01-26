@@ -476,7 +476,7 @@ class TutorialEnv(DirectRLEnv):
             dists = torch.norm(obstacle_pos - robot_pos.unsqueeze(0), dim=-1)
 
             # 碰撞阈值 = 障碍物半径 + 机器人半径(安全距离)
-            robot_radius = 0.5  # 假设机器人半径为0.5米
+            robot_radius = 0.4  # 假设机器人半径为0.4米
             thresholds = self.obstacle_radii.unsqueeze(1) + robot_radius
 
             # 判断是否发生碰撞
