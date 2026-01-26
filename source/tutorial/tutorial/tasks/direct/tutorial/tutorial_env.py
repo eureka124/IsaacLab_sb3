@@ -55,12 +55,12 @@ class TutorialEnv(DirectRLEnv):
 
         # 初始化 LeePositionController
         uav_params = {
-            "name": "iris",
-            "mass": 1.52,
-            "inertia": {"xx": 0.0347563, "yy": 0.0458929, "zz": 0.0977},
+            "name": "hummingbird",
+            "mass": 0.716,
+            "inertia": {"xx": 0.007, "yy": 0.007, "zz": 0.012},
             "rotor_configuration": {
-                "rotor_angles": [-0.533708, 2.565218, 0.533708, -2.565218],
-                "arm_lengths": [0.255539, 0.238537, 0.255539, 0.238537],
+                "rotor_angles": [0.0, 1.57079632679, 3.14159265359, -1.57079632679],
+                "arm_lengths": [0.17, 0.17, 0.17, 0.17],
                 "force_constants": [8.54858e-06, 8.54858e-06, 8.54858e-06, 8.54858e-06],
                 "moment_constants": [
                     1.3677728816219314e-07,
@@ -68,7 +68,7 @@ class TutorialEnv(DirectRLEnv):
                     1.3677728816219314e-07,
                     1.3677728816219314e-07,
                 ],
-                "directions": [1, 1, -1, -1],
+                "directions": [-1, 1, -1, 1],
                 "max_rotation_velocities": [838, 838, 838, 838],
             },
         }
@@ -244,7 +244,7 @@ class TutorialEnv(DirectRLEnv):
 
         # torque = I * ang_acc.
         # 我们从 uav_params 中已知的惯性参数计算
-        inertia = torch.tensor([0.0347563, 0.0458929, 0.0977], device=self.device)
+        inertia = torch.tensor([0.007, 0.007, 0.012], device=self.device)
         torques_local = (ang_acc * inertia).unsqueeze(1)
 
         self.robot.set_external_force_and_torque(
