@@ -8,19 +8,19 @@ from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
-from tutorial.assets.iris import IRIS_CFG
+from tutorial.assets.hummingbird import HUMMINGBIRD_CFG
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 import numpy as np
 from gymnasium import spaces
 
-_robot_spawn_cfg = IRIS_CFG.spawn.copy()
-_robot_spawn_cfg.activate_contact_sensors = True
+_robot_spawn_cfg = HUMMINGBIRD_CFG.spawn.copy()
+_robot_spawn_cfg.activate_contact_sensors = False
 
 
 @configclass
 class MySceneCfg(InteractiveSceneCfg):
     # 无人机模型
-    robot_cfg: ArticulationCfg = IRIS_CFG.replace(
+    robot_cfg: ArticulationCfg = HUMMINGBIRD_CFG.replace(
         prim_path="{ENV_REGEX_NS}/Robot", spawn=_robot_spawn_cfg
     )
     # 无人机主观深度相机
