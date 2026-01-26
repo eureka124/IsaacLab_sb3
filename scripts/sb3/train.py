@@ -305,7 +305,7 @@ def main(
         verbose=2,
         max_keep=5,
     )
-    isaac_log_callback = IsaacLogCallback(log_freq=10)  # 每10个episode记录一次
+    isaac_log_callback = IsaacLogCallback(log_freq=100)  # 每100个episode记录一次
     callbacks = [
         checkpoint_callback,
         LogEveryNTimesteps(n_steps=args_cli.log_interval),
