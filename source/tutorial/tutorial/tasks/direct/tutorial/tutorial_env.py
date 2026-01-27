@@ -534,22 +534,44 @@ class TutorialEnv(DirectRLEnv):
 
         # 为重置的环境采样新的目标位置
         len_env_ids = len(env_ids)
-        x = (
-            torch.zeros(len_env_ids, device=self.device)
-            .uniform_(
-                -self.cfg.scene.env_spacing / 2.0 + 4.0,
-                self.cfg.scene.env_spacing / 2.0 - 4.0,
-            )
-            .unsqueeze(dim=1)
+
+        # 边界定义 (保留 4.0 的安全距离)
+        bound = self.cfg.scene.env_spacing / 2.0 - 4.0
+
+        # 随机选择 4 条边: 0->(-bound, rand), 1->(bound, rand), 2->(rand, -bound), 3->(rand, bound)
+        edge_indices = torch.randint(0, 4, (len_env_ids,), device=self.device)
+
+        x = torch.zeros(len_env_ids, device=self.device)
+        y = torch.zeros(len_env_ids, device=self.device)
+
+        # 在边界范围内随机生成坐标值
+        random_vals = torch.empty(len_env_ids, device=self.device).uniform_(
+            -bound, bound
         )
-        y = (
-            torch.zeros(len_env_ids, device=self.device)
-            .uniform_(
-                -self.cfg.scene.env_spacing / 2.0 + 4.0,
-                self.cfg.scene.env_spacing / 2.0 - 4.0,
-            )
-            .unsqueeze(dim=1)
-        )
+
+        # Edge 0: x = -bound
+        mask = edge_indices == 0
+        x[mask] = -bound
+        y[mask] = random_vals[mask]
+
+        # Edge 1: x = bound
+        mask = edge_indices == 1
+        x[mask] = bound
+        y[mask] = random_vals[mask]
+
+        # Edge 2: y = -bound
+        mask = edge_indices == 2
+        x[mask] = random_vals[mask]
+        y[mask] = -bound
+
+        # Edge 3: y = bound
+        mask = edge_indices == 3
+        x[mask] = random_vals[mask]
+        y[mask] = bound
+
+        x = x.unsqueeze(dim=1)
+        y = y.unsqueeze(dim=1)
+
         z = torch.zeros(len_env_ids, device=self.device).uniform_(2, 2).unsqueeze(dim=1)
         xyz = torch.cat((x, y, z), dim=-1)
         # print("Sampled target positions for reset envs:", xyz)
