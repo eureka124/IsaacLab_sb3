@@ -6,8 +6,8 @@ models:
     clip_actions: False
     clip_log_std: True
     min_log_std: -20.0
-    max_log_std: 2.0
-    initial_log_std: 0.0
+    max_log_std: 5.0
+    initial_log_std: 1.0
     network:
     - name: features_extractor
       input: STATES["camera"]
