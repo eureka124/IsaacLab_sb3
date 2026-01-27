@@ -536,7 +536,7 @@ class TutorialEnv(DirectRLEnv):
         len_env_ids = len(env_ids)
 
         # 边界定义 (保留 4.0 的安全距离)
-        bound = self.cfg.scene.env_spacing / 2.0 - 4.0
+        bound = self.cfg.scene.env_spacing / 2.0
 
         # 随机选择 4 条边: 0->(-bound, rand), 1->(bound, rand), 2->(rand, -bound), 3->(rand, bound)
         edge_indices = torch.randint(0, 4, (len_env_ids,), device=self.device)
