@@ -127,9 +127,9 @@ class IsaacLogCallback(BaseCallback):
             timeout_rate = self.timeout_count / self.total_episodes
 
             # Record to TensorBoard
-            self.logger.record("env/success_rate", success_rate)
-            self.logger.record("env/collision_rate", collision_rate)
-            self.logger.record("env/timeout_rate", timeout_rate)
+            self.logger.record("Metrics/Success_Rate", success_rate)
+            self.logger.record("Metrics/Collision_Rate", collision_rate)
+            self.logger.record("Metrics/Timeout_Rate", timeout_rate)
 
             # Dump logs to ensure they are written immediately
             # self.logger.dump(step=self.num_timesteps)
@@ -141,4 +141,40 @@ class IsaacLogCallback(BaseCallback):
             self.timeout_count = 0.0
             self.total_episodes = 0
 
+        return True
+
+class KLAdaptiveLRCallback(BaseCallback):
+    """
+    A custom callback that adjusts the learning rate based on the KL divergence,
+    similar to skrl's KLAdaptiveLR.
+    """
+
+    def __init__(self, initial_lr: float, min_lr: float = 1e-6, max_lr: float = 1e-2, kl_threshold: float = 0.016, verbose=0):
+        super().__init__(verbose)
+        self.current_lr = initial_lr
+        self.min_lr = min_lr
+        self.max_lr = max_lr
+        self.kl_threshold = kl_threshold
+
+    def _on_training_start(self):
+        # Override the learning rate schedule of the model
+        # The schedule function is expected to accept one argument (progress_remaining)
+        self.model.lr_schedule = lambda progress_remaining: self.current_lr
+
+    def _on_rollout_start(self):
+        # Access the logger to get the last approx_kl
+        # Note: name_to_value contains the last recorded values
+        if "train/approx_kl" in self.logger.name_to_value:
+            kl = self.logger.name_to_value["train/approx_kl"]
+            
+            if kl > self.kl_threshold * 2.0:
+                self.current_lr = max(self.current_lr / 1.5, self.min_lr)
+                if self.verbose > 0:
+                    print(f"KL divergence {kl:.6f} > {self.kl_threshold * 2.0:.6f}. Decreasing LR to {self.current_lr:.6f}")
+            elif kl < self.kl_threshold / 2.0:
+                self.current_lr = min(self.current_lr * 1.5, self.max_lr)
+                if self.verbose > 0:
+                    print(f"KL divergence {kl:.6f} < {self.kl_threshold / 2.0:.6f}. Increasing LR to {self.current_lr:.6f}")
+    
+    def _on_step(self) -> bool:
         return True
