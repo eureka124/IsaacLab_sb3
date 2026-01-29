@@ -70,7 +70,7 @@ for i, (pos, size) in enumerate(wall_definitions):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
             collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.5, 0.5, 0.5)),
+            # visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.5, 0.5, 0.5)),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=pos),
     )
@@ -100,7 +100,7 @@ for i, data in enumerate(obstacles_data):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
             collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.3, 0.5, 0.7)),
+            # visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.3, 0.5, 0.7)),
         )
     else:
         spawn_cfg = sim_utils.CylinderCfg(
@@ -109,7 +109,7 @@ for i, data in enumerate(obstacles_data):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
             collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.7, 0.5, 0.3)),
+            # visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.7, 0.5, 0.3)),
         )
 
     obstacle_cfg = RigidObjectCfg(
