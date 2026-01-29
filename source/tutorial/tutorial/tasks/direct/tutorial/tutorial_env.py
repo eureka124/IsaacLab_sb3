@@ -92,15 +92,25 @@ class TutorialEnv(DirectRLEnv):
         # Collect obstacles from scene
         self.obstacles = []
         self.obstacle_radii = []
-        # We assume Obstacle_0 to Obstacle_59 exist in scene as per config
-        for i in range(60):
+        # 根据实际配置的障碍物数量（配置文件中定义了6个）
+        for i in range(100):  # 设置一个较大的上限以便扩展
             name = f"Obstacle_{i}"
             # Check if it exists in the scene dictionary
             if name in self.scene.keys():
                 obs = self.scene[name]
                 self.obstacles.append(obs)
                 # Get radius from config spawn.
-                self.obstacle_radii.append(obs.cfg.spawn.radius)
+                if hasattr(obs.cfg.spawn, "radius"):
+                    self.obstacle_radii.append(obs.cfg.spawn.radius)
+                elif hasattr(obs.cfg.spawn, "size"):
+                    # For cuboid, use half of the diagonal of the base as radius approximation
+                    # size is (size_x, size_y, size_z)
+                    s = obs.cfg.spawn.size
+                    radius = (s[0] ** 2 + s[1] ** 2) ** 0.5 / 2.0
+                    self.obstacle_radii.append(radius)
+                else:
+                    # Fallback if neither radius nor size is available
+                    self.obstacle_radii.append(0.0)
 
         if self.obstacles:
             self.obstacle_radii = torch.tensor(self.obstacle_radii, device=self.device)
@@ -199,8 +209,8 @@ class TutorialEnv(DirectRLEnv):
             2 * torch.pi
         ) - torch.pi
 
-        # 高度控制交给 Lee 控制器：设置目标高度为 2.0，目标垂直速度为 0
-        target_z = 2.0
+        # 高度控制交给 Lee 控制器：设置目标高度为 0.8，目标垂直速度为 0
+        target_z = 0.8
         target_vel_z = torch.zeros((self.num_envs, 1), device=self.device)
 
         target_vel = torch.cat([target_vel_xy, target_vel_z], dim=-1)
@@ -463,9 +473,24 @@ class TutorialEnv(DirectRLEnv):
         self.arrived = arrived
 
         # 2. 判断是否碰撞
+        robot_radius = 0.4  # 假设机器人半径为0.4米
+
+        # 墙壁碰撞检测
+        # 房间尺寸为 11.2 x 5.2 (X: ±5.6, Y: ±2.6)
+        room_x = 5.6
+        room_y = 2.6
+
+        # pos 是在 _get_dones 顶部定义的: pos = self.robot.data.root_pos_w[:, :2]
+        collided_wall = (
+            (pos[:, 0] < -room_x + robot_radius)
+            | (pos[:, 0] > room_x - robot_radius)
+            | (pos[:, 1] < -room_y + robot_radius)
+            | (pos[:, 1] > room_y - robot_radius)
+        )
+
         if len(self.obstacles) > 0:
             # 机器人位置 (num_envs, 2)
-            robot_pos = self.robot.data.root_pos_w[:, :2]
+            robot_pos = pos
 
             # 障碍物位置 (num_obstacles, num_envs, 2)
             obstacle_pos = torch.stack(
@@ -476,13 +501,13 @@ class TutorialEnv(DirectRLEnv):
             dists = torch.norm(obstacle_pos - robot_pos.unsqueeze(0), dim=-1)
 
             # 碰撞阈值 = 障碍物半径 + 机器人半径(安全距离)
-            robot_radius = 0.4  # 假设机器人半径为0.4米
             thresholds = self.obstacle_radii.unsqueeze(1) + robot_radius
 
-            # 判断是否发生碰撞
-            collided = (dists < thresholds).any(dim=0)
+            # 判断是否发生碰撞与障碍物
+            collided_obstacle = (dists < thresholds).any(dim=0)
+            collided = collided_obstacle | collided_wall
         else:
-            collided = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            collided = collided_wall
         self.collided = collided
         # 3. 统计信息 (确保在 __init__ 中初始化了这些变量)
         num_resets = (
@@ -527,58 +552,59 @@ class TutorialEnv(DirectRLEnv):
 
         default_root_state = self.robot.data.default_root_state[env_ids].clone()
         # print("Resetting envs:", env_ids)
-        # 将重置的环境位置偏移到对应环境的原点位置
-        default_root_state[:, :3] += self.scene.env_origins[env_ids]
+
+        # 为重置的环境采样新的起点和目标位置
+        len_env_ids = len(env_ids)
+
+        # 房间尺寸为 11.2 x 5.2 (X: ±5.6, Y: ±2.6)
+        # 我们设定起点和终点在房间的长轴两端 (X轴)
+        # X轴边界设定为 5.0 (留出空间)
+        # Y轴随机范围设定为 ±2.0
+
+        # 随机选择起点在哪一端 (0: 左端 X=-5.0, 1: 右端 X=5.0)
+        start_side = torch.randint(0, 2, (len_env_ids,), device=self.device)
+
+        start_x = torch.zeros(len_env_ids, device=self.device)
+        target_x = torch.zeros(len_env_ids, device=self.device)
+
+        # X 轴位置设定
+        x_pos = 5.0
+
+        # Start at Left (Negative X)
+        left_mask = start_side == 0
+        start_x[left_mask] = -x_pos
+        target_x[left_mask] = x_pos
+
+        # Start at Right (Positive X)
+        right_mask = start_side == 1
+        start_x[right_mask] = x_pos
+        target_x[right_mask] = -x_pos
+
+        # Y 轴位置设定 (随机)
+        start_y = torch.empty(len_env_ids, device=self.device).uniform_(-2.0, 2.0)
+        target_y = torch.empty(len_env_ids, device=self.device).uniform_(-2.0, 2.0)
+
+        # Z 轴位置设定 (固定高度 0.8)
+        start_z = 0.8
+        target_z = 0.8
+
+        # 组合起点位置 (局部)
+        start_xyz = torch.stack(
+            [start_x, start_y, torch.full_like(start_x, start_z)], dim=-1
+        )
+        # 设置机器人起点位置 (全局)
+        default_root_state[:, :3] = start_xyz + self.scene.env_origins[env_ids]
+
         # 设置机器人速度
         self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
 
-        # 为重置的环境采样新的目标位置
-        len_env_ids = len(env_ids)
+        # 组合目标点位置 (局部)
+        target_x = target_x.unsqueeze(dim=1)
+        target_y = target_y.unsqueeze(dim=1)
+        target_z = torch.full((len_env_ids, 1), target_z, device=self.device)
+        xyz = torch.cat((target_x, target_y, target_z), dim=-1)
 
-        # 边界定义 (保留 4.0 的安全距离)
-        bound = self.cfg.scene.env_spacing / 2.0
-
-        # 随机选择 4 条边: 0->(-bound, rand), 1->(bound, rand), 2->(rand, -bound), 3->(rand, bound)
-        edge_indices = torch.randint(0, 4, (len_env_ids,), device=self.device)
-
-        x = torch.zeros(len_env_ids, device=self.device)
-        y = torch.zeros(len_env_ids, device=self.device)
-
-        # 在边界范围内随机生成坐标值
-        random_vals = torch.empty(len_env_ids, device=self.device).uniform_(
-            -bound, bound
-        )
-
-        # Edge 0: x = -bound
-        mask = edge_indices == 0
-        x[mask] = -bound
-        y[mask] = random_vals[mask]
-
-        # Edge 1: x = bound
-        mask = edge_indices == 1
-        x[mask] = bound
-        y[mask] = random_vals[mask]
-
-        # Edge 2: y = -bound
-        mask = edge_indices == 2
-        x[mask] = random_vals[mask]
-        y[mask] = -bound
-
-        # Edge 3: y = bound
-        mask = edge_indices == 3
-        x[mask] = random_vals[mask]
-        y[mask] = bound
-
-        x = x.unsqueeze(dim=1)
-        y = y.unsqueeze(dim=1)
-
-        z = torch.zeros(len_env_ids, device=self.device).uniform_(2, 2).unsqueeze(dim=1)
-        xyz = torch.cat((x, y, z), dim=-1)
-        # print("Sampled target positions for reset envs:", xyz)
-
-        # 向量化更新：
-        # 1. xyz 是局部坐标，加上对应环境的原点坐标 (env_origins[env_ids]) 转换为全局坐标
-        # 2. 直接使用索引 [env_ids] 更新 self.target_pos 中对应的行，未重置的环境保持不变
+        # 更新目标点 self.target_pos (全局)
         self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
 
         # 获取目标点相对机器人位置的yaw角度
