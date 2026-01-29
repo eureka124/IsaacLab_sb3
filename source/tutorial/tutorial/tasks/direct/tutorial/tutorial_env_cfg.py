@@ -6,7 +6,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.sensors import CameraCfg
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sim import SimulationCfg
+from isaaclab.sim import SimulationCfg, PhysxCfg
 from isaaclab.utils import configclass
 from tutorial.assets.hummingbird import HUMMINGBIRD_CFG
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
@@ -37,7 +37,7 @@ class MySceneCfg(InteractiveSceneCfg):
             clipping_range=(0.1, 15),
         ),
         offset=CameraCfg.OffsetCfg(
-            pos=(0.0, 0.0, -1.0), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"
+            pos=(0.4, 0.0, 0.0), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"
         ),
     )
 
@@ -142,7 +142,10 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     }
     state_space = 0
     # simulation
-    sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
+    sim: SimulationCfg = SimulationCfg(
+        dt=1 / 120,
+        render_interval=decimation,
+    )
 
     # scene
     scene: InteractiveSceneCfg = MySceneCfg(
