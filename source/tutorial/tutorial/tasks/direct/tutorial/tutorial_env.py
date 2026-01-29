@@ -481,11 +481,13 @@ class TutorialEnv(DirectRLEnv):
         room_y = 2.6
 
         # pos 是在 _get_dones 顶部定义的: pos = self.robot.data.root_pos_w[:, :2]
+        # 需要将其转换为相对于环境原点的局部坐标
+        pos_relative = pos - self.scene.env_origins[:, :2]
         collided_wall = (
-            (pos[:, 0] < -room_x + robot_radius)
-            | (pos[:, 0] > room_x - robot_radius)
-            | (pos[:, 1] < -room_y + robot_radius)
-            | (pos[:, 1] > room_y - robot_radius)
+            (pos_relative[:, 0] < -room_x + robot_radius)
+            | (pos_relative[:, 0] > room_x - robot_radius)
+            | (pos_relative[:, 1] < -room_y + robot_radius)
+            | (pos_relative[:, 1] > room_y - robot_radius)
         )
 
         if len(self.obstacles) > 0:
@@ -568,7 +570,7 @@ class TutorialEnv(DirectRLEnv):
         target_x = torch.zeros(len_env_ids, device=self.device)
 
         # X 轴位置设定
-        x_pos = 5.0
+        x_pos = 4.7
 
         # Start at Left (Negative X)
         left_mask = start_side == 0
@@ -739,7 +741,7 @@ def compute_rewards(
 ):
     total_reward = (
         reward_velocity * 5.0  # 速度在目标方向的分量
-        + 1.0  # 存活奖励
+        + 2.0  # 存活奖励
         - penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 20.0  # 碰撞惩罚
         + arrived * 200.0  # 到达奖励
