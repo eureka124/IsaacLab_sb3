@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import torch
+import traceback
 import isaaclab.sim as sim_utils
 from isaaclab.envs import DirectRLEnv
 from isaaclab.assets import RigidObject
@@ -113,7 +114,7 @@ class TutorialEnv(DirectRLEnv):
         self.robot = self.scene["robot_cfg"]
         # 添加地面平面
         spawn_ground_plane(
-            prim_path="/World/ground", cfg=GroundPlaneCfg(), size=(1000, 1000)
+            prim_path="/World/ground", cfg=GroundPlaneCfg(), size=(700, 700)
         )
         # 克隆环境
         self.scene.clone_environments(copy_from_source=False)
@@ -768,11 +769,11 @@ def compute_rewards(
     penalty_obstacle: torch.Tensor,
 ):
     total_reward = (
-        reward_velocity * 5.0  # 速度在目标方向的分量
+        reward_velocity * 10.0  # 速度在目标方向的分量
         + 2.0  # 存活奖励
-        - penalty_smooth * 0.1  # 平滑度惩罚
+        - penalty_smooth * 0.5  # 平滑度惩罚
         - collided * 20.0  # 碰撞惩罚
-        + arrived * 200.0  # 到达奖励
+        + arrived * 300.0  # 到达奖励
         - penalty_obstacle  # 障碍物距离惩罚
     )
     # print("Total Reward:", total_reward)
