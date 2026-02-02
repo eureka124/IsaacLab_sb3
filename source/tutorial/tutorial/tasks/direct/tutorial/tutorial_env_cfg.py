@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 import isaaclab.sim as sim_utils
-from isaaclab.sensors import CameraCfg
+from isaaclab.sensors import TiledCameraCfg
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg, PhysxCfg
@@ -24,7 +24,7 @@ class MySceneCfg(InteractiveSceneCfg):
         prim_path="{ENV_REGEX_NS}/Robot", spawn=_robot_spawn_cfg
     )
     # 无人机主观深度相机
-    camera = CameraCfg(
+    camera = TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/base_link/front_cam",
         update_period=0.04,
         height=48,
@@ -37,7 +37,7 @@ class MySceneCfg(InteractiveSceneCfg):
             vertical_aperture=11.37763669,
             clipping_range=(0.1, 15),
         ),
-        offset=CameraCfg.OffsetCfg(
+        offset=TiledCameraCfg.OffsetCfg(
             pos=(0.1, 0.0, 0.3), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"
         ),
     )

@@ -112,7 +112,9 @@ class TutorialEnv(DirectRLEnv):
     def _setup_scene(self):
         self.robot = self.scene["robot_cfg"]
         # 添加地面平面
-        spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg())
+        spawn_ground_plane(
+            prim_path="/World/ground", cfg=GroundPlaneCfg(), size=(500, 500)
+        )
         # 克隆环境
         self.scene.clone_environments(copy_from_source=False)
         # 我们需要为 CPU 模拟明确过滤碰撞
@@ -190,6 +192,9 @@ class TutorialEnv(DirectRLEnv):
 
         # 3. 构造控制目标
         # actions[:, 0] 是vx, actions[:, 1] vy, actions[:, 2] 是 yaw_rate
+        self.actions[:, 0] = 1
+        self.actions[:, 1] = 1
+        self.actions[:, 2] = 0.5
         target_vel_xy = (
             forward_direction[:, :2] * self.actions[:, 0:1]
             + side_direction[:, :2] * self.actions[:, 1:2]
