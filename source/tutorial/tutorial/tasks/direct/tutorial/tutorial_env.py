@@ -113,7 +113,7 @@ class TutorialEnv(DirectRLEnv):
         self.robot = self.scene["robot_cfg"]
         # 添加地面平面
         spawn_ground_plane(
-            prim_path="/World/ground", cfg=GroundPlaneCfg(), size=(500, 500)
+            prim_path="/World/ground", cfg=GroundPlaneCfg(), size=(1000, 1000)
         )
         # 克隆环境
         self.scene.clone_environments(copy_from_source=False)
@@ -192,9 +192,6 @@ class TutorialEnv(DirectRLEnv):
 
         # 3. 构造控制目标
         # actions[:, 0] 是vx, actions[:, 1] vy, actions[:, 2] 是 yaw_rate
-        self.actions[:, 0] = 1
-        self.actions[:, 1] = 1
-        self.actions[:, 2] = 0.5
         target_vel_xy = (
             forward_direction[:, :2] * self.actions[:, 0:1]
             + side_direction[:, :2] * self.actions[:, 1:2]
@@ -405,6 +402,27 @@ class TutorialEnv(DirectRLEnv):
         action_diff = self.actions - self.prev_actions  # 动作变化 (num_envs    , 2)
         penalty_smooth = torch.norm(action_diff, p=2, dim=1)  # 平滑惩罚 (num_envs,)
         self.prev_actions = self.actions.clone()  # 更新前一动作
+
+        # 计算距离障碍物过近惩罚
+        penalty_obstacle = torch.zeros(self.num_envs, device=self.device)
+        if len(self.obstacles) > 0:
+            obstacle_pos = torch.stack(
+                [obs.data.root_pos_w[:, :2] for obs in self.obstacles], dim=0
+            )
+            # 计算距离: 机器人中心到障碍物中心
+            dists = torch.norm(obstacle_pos - robot_pos.unsqueeze(0), dim=-1)
+            # 计算距离: 机器人中心到障碍物表面 (假设障碍物是圆柱体)
+            dists_surface = dists - self.obstacle_radii.unsqueeze(1)
+            # 取最近的障碍物距离
+            min_dists, _ = torch.min(dists_surface, dim=0)
+
+            # 距离小于1米开始惩罚，0.4米时惩罚为20，中间线性变化
+            # dist <= 0.4 -> 20
+            # 0.4 < dist < 1.0 -> 线性减小
+            # dist >= 1.0 -> 0
+            clamped_dists = torch.clamp(min_dists, min=0.4, max=1.0)
+            penalty_obstacle = 20.0 * (1.0 - clamped_dists) / 0.6
+
         # print("Penalty Smooth:", penalty_smooth)
         # print("Reward Velocity:", reward_velocity)
         # print("Collided:", self.collided)
@@ -414,6 +432,7 @@ class TutorialEnv(DirectRLEnv):
             self.collided,
             penalty_smooth,
             self.arrived,
+            penalty_obstacle,
         )  # print(self.robot.data)
 
         # 检查 total_reward 是否包含 NaN 值，如果有则中断程序
@@ -432,6 +451,8 @@ class TutorialEnv(DirectRLEnv):
                 print("NaN detected in collided")
             if torch.isnan(self.arrived.float()).any():
                 print("NaN detected in arrived")
+            if torch.isnan(penalty_obstacle).any():
+                print("NaN detected in penalty_obstacle")
             raise RuntimeError("total_reward contains NaN values, interrupting program")
 
         return total_reward
@@ -744,6 +765,7 @@ def compute_rewards(
     collided: torch.Tensor,
     penalty_smooth: torch.Tensor,
     arrived: torch.Tensor,
+    penalty_obstacle: torch.Tensor,
 ):
     total_reward = (
         reward_velocity * 5.0  # 速度在目标方向的分量
@@ -751,6 +773,7 @@ def compute_rewards(
         - penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 20.0  # 碰撞惩罚
         + arrived * 200.0  # 到达奖励
+        - penalty_obstacle  # 障碍物距离惩罚
     )
     # print("Total Reward:", total_reward)
     # print("Reward Velocity:", reward_velocity)
