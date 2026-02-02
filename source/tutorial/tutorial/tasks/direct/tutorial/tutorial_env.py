@@ -45,12 +45,6 @@ class TutorialEnv(DirectRLEnv):
         marker_cfg.prim_path = "/Visuals/Command/goal_position"
         self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
 
-        # 速度方向箭头可视化
-        arrow_cfg = RED_ARROW_X_MARKER_CFG.copy()
-        arrow_cfg.markers["arrow"].scale = (2, 0.4, 0.4)  # 默认缩放
-        arrow_cfg.prim_path = "/Visuals/Command/velocity_arrow"
-        self.vel_arrow_visualizer = VisualizationMarkers(arrow_cfg)
-
         self.img_buffer = DepthImageBuffer(self.cfg.scene.num_envs, self.device)
 
         # 初始化 LeePositionController
@@ -93,7 +87,7 @@ class TutorialEnv(DirectRLEnv):
         self.obstacles = []
         self.obstacle_radii = []
         # 根据实际配置的障碍物数量（配置文件中定义了6个）
-        for i in range(100):  # 设置一个较大的上限以便扩展
+        for i in range(6):  # 设置一个较大的上限以便扩展
             name = f"Obstacle_{i}"
             # Check if it exists in the scene dictionary
             if name in self.scene.keys():
@@ -124,9 +118,9 @@ class TutorialEnv(DirectRLEnv):
         # 我们需要为 CPU 模拟明确过滤碰撞
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[])
-        # 添加环境光
-        light_cfg = sim_utils.DomeLightCfg(intensity=4000.0, color=(1.0, 1.0, 0.75))
-        light_cfg.func("/World/Light", light_cfg)
+        # # 添加环境光
+        # light_cfg = sim_utils.DomeLightCfg(intensity=4000.0, color=(1.0, 1.0, 0.75))
+        # light_cfg.func("/World/Light", light_cfg)
 
         # # 可动障碍物的定义 (优化后)
         # # 随机生成障碍物位置
@@ -264,61 +258,30 @@ class TutorialEnv(DirectRLEnv):
         # 6. 设置螺旋桨转速 (可视化)
         rpms = torch.sqrt(torch.clamp((cmd + 1) / 2, min=0.0)) * 838  # max_rot_vel
         joint_vel_targets = rpms * (2 * torch.pi / 60.0)  # 单位转换
-        self.robot.write_joint_velocity_to_sim(joint_vel_targets, env_ids=None)
-
-    def _update_velocity_arrow(self):
-        # 获取当前速度
-        vel = self.robot.data.root_lin_vel_w
-        speed = torch.norm(vel, dim=-1, keepdim=True)
-
-        # 计算位置：在无人机上方 0.5m
-        pos = self.robot.data.root_pos_w + torch.tensor([0, 0, 0.5], device=self.device)
-
-        # 计算朝向：将 X 轴对齐到速度方向
-        # 归一化速度向量作为前向向量 (X)
-        forward = vel / (speed + 1e-6)
-        # 假设世界上方为 Z 轴
-        up = torch.tensor([0.0, 0.0, 1.0], device=self.device).expand_as(forward)
-        # 计算右向向量 (Y) = Up x Forward
-        right = torch.cross(up, forward, dim=-1)
-        right = right / (torch.norm(right, dim=-1, keepdim=True) + 1e-6)
-        # 重新计算上向向量 (Z) = Forward x Right
-        actual_up = torch.cross(forward, right, dim=-1)
-
-        # 构造旋转矩阵 [X, Y, Z]
-        rot_mat = torch.stack([forward, right, actual_up], dim=-1)
-        # 转换为四元数
-        quat = quat_from_matrix(rot_mat)
-
-        # 动态调整箭头长度，使其与速度成正比 (可选)
-        # 这里我们让箭头长度 = 速度大小 * 0.5，最小 0.1
-        scale_x = speed * 0.5
-        scales = torch.cat(
-            [scale_x, torch.full_like(scale_x, 0.1), torch.full_like(scale_x, 0.1)],
-            dim=-1,
-        )
-
-        # 更新可视化
-        self.vel_arrow_visualizer.visualize(pos, quat, scales=scales)
+        joint_pos_targets = torch.zeros_like(joint_vel_targets)
+        # self.robot.write_joint_velocity_to_sim(joint_vel_targets, env_ids=None)
+        self.robot.write_joint_position_to_sim(joint_pos_targets, env_ids=None)
 
     def _get_norm_depth_image(self) -> torch.Tensor:
-        depth_frame = (
-            self.scene["camera"].data.output["distance_to_image_plane"].clone()
-        )
-        # 归一化深度图
-        max_vals = 10.0  # 相机最远探测距离m
-        depth_frame = torch.nan_to_num(
-            depth_frame,
-            nan=max_vals,
-            posinf=max_vals,
-            neginf=0.0,
-        )
-        depth_frame = torch.clamp(depth_frame, min=0.0, max=max_vals)
-        depth_frame = depth_frame / max_vals
-        # 转换为 0-255 uint8
-        depth_frame = (depth_frame * 255.0).round().clamp(0, 255).to(torch.uint8)
-        # print(depth_norm.shape) # (env_num, 1, 16, 12)
-        return depth_frame  # shape:[env_num, 1, 16, 12]
+        depth_frame = self.scene["camera"].data.output["distance_to_camera"].clone()
+
+        # 1. 裁剪至 0.3 - 24.0
+        depth_frame = torch.clamp(depth_frame, min=0.3, max=24.0)
+
+        # 2. 归一化至 0 - 1
+        depth_frame = (depth_frame - 0.3) / (24.0 - 0.3)
+
+        # 3. 4x4 Max Pooling
+        # 输入需要 (N, C, H, W)，当前为 (N, H, W, 1)
+        depth_frame = -depth_frame.permute(0, 3, 1, 2)  # (N, 1, 48, 64)
+        depth_frame = -torch.nn.functional.max_pool2d(
+            depth_frame, kernel_size=4, stride=4
+        )  # (N, 1, 12, 16)
+
+        # 恢复形状 (N, H, W, 1) 供 buffer 使用
+        depth_frame = depth_frame.permute(0, 2, 3, 1)  # (N, 12, 16, 1)
+
+        return depth_frame  # shape:[num_envs, 12, 16, 1]
 
     def _get_observations(self) -> dict:
         depth_norm = self._get_norm_depth_image()
@@ -411,8 +374,6 @@ class TutorialEnv(DirectRLEnv):
                 "critic-state": critic_obs,
             },
         }
-        # 更新速度箭头可视化
-        self._update_velocity_arrow()
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
@@ -423,8 +384,8 @@ class TutorialEnv(DirectRLEnv):
         direction_vector = (
             target_pos - robot_pos
         )  # 目标点相对机器人的位置 (num_envs, 2)
-        direction_vector = direction_vector / torch.norm(
-            direction_vector, dim=-1, keepdim=True
+        direction_vector = direction_vector / (
+            torch.norm(direction_vector, dim=-1, keepdim=True) + 1e-6
         )  # 归一化方向向量 (num_envs, 2)
         linear_velocity = self.robot.data.root_lin_vel_w[
             :, :2
@@ -452,6 +413,20 @@ class TutorialEnv(DirectRLEnv):
 
         # 检查 total_reward 是否包含 NaN 值，如果有则中断程序
         if torch.isnan(total_reward).any():
+            if torch.isnan(reward_velocity).any():
+                print("NaN detected in reward_velocity")
+                print("linear_velocity:", linear_velocity)
+                print("direction_vector:", direction_vector)
+                print("robot_pos:", robot_pos)
+                print("target_pos:", target_pos)
+            if torch.isnan(penalty_smooth).any():
+                print("NaN detected in penalty_smooth")
+                print("actions:", self.actions)
+                print("prev_actions:", self.prev_actions)
+            if torch.isnan(self.collided.float()).any():
+                print("NaN detected in collided")
+            if torch.isnan(self.arrived.float()).any():
+                print("NaN detected in arrived")
             raise RuntimeError("total_reward contains NaN values, interrupting program")
 
         return total_reward
@@ -643,6 +618,32 @@ class TutorialEnv(DirectRLEnv):
             2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)
         ).unsqueeze(-1)
 
+        # 随机化障碍物位置
+        if self.obstacles:
+            for obstacle in self.obstacles:
+                # 获取障碍物的默认状态
+                obs_default_root_state = obstacle.data.default_root_state[
+                    env_ids
+                ].clone()
+                # 获取配置中的初始位置 (局部)
+                default_pos_local = torch.tensor(
+                    obstacle.cfg.init_state.pos, device=self.device, dtype=torch.float32
+                )
+                # 扩展到 batch
+                new_pos = default_pos_local.repeat(len_env_ids, 1)
+
+                # 随机生成噪声 (mean=0, variance=0.5 -> std=sqrt(0.5))
+                noise = torch.randn((len_env_ids, 2), device=self.device) * 0.2
+
+                # 应用噪声到XY坐标 (在局部坐标系)
+                new_pos[:, :2] += noise
+
+                # 加上环境原点 (转换为全局坐标)
+                new_pos += self.scene.env_origins[env_ids]
+
+                # 更新位置
+                obs_default_root_state[:, :3] = new_pos
+
 
 class DepthImageBuffer:
     def __init__(self, num_envs, device, buffer_size=49):
@@ -664,9 +665,9 @@ class DepthImageBuffer:
         """
         向量化更新缓冲区
         Args:
-            depth_norm: 形状为(num_envs, 16, 12, 1)的深度图张量
+            depth_norm: 形状为(num_envs, 12, 16, 1)的深度图张量
         Returns:
-            combined_tensor: 形状为(num_envs, 3, 16, 12)的PyTorch张量
+            combined_tensor: 形状为(num_envs, 3, 12, 16)的PyTorch张量
         """
         if self.buffer is None:
             h, w = depth_norm.shape[1], depth_norm.shape[2]

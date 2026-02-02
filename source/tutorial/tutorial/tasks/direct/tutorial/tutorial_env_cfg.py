@@ -27,17 +27,18 @@ class MySceneCfg(InteractiveSceneCfg):
     camera = CameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/base_link/front_cam",
         update_period=0.04,
-        height=16,
-        width=12,  # 深度相机的输出(16, 12)
-        data_types=["distance_to_image_plane"],
+        height=48,
+        width=64,  # 深度相机的输出(48, 64)
+        data_types=["distance_to_camera"],  # 只获取深度信息
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=10.4775,
             focus_distance=10.0,
-            horizontal_aperture=20.955,
+            horizontal_aperture=19.54085363,
+            vertical_aperture=11.37763669,
             clipping_range=(0.1, 15),
         ),
         offset=CameraCfg.OffsetCfg(
-            pos=(0.4, 0.0, 0.0), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"
+            pos=(0.1, 0.0, 0.3), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"
         ),
     )
 
@@ -53,11 +54,11 @@ class MySceneCfg(InteractiveSceneCfg):
 # 定义围挡（墙壁）
 # 场景范围 11.2 x 5.2 (-5.6~5.6, -2.6~2.6)
 wall_definitions = [
-    # (pos(x,y,z), size(x,y,z)) - 墙壁厚度0.2，高度2.0
-    ((5.6, 0.0, 1.0), (0.2, 5.2, 2.0)),  # Front (X+)
-    ((-5.6, 0.0, 1.0), (0.2, 5.2, 2.0)),  # Back (X-)
-    ((0.0, 2.6, 1.0), (11.4, 0.2, 2.0)),  # Left (Y+)
-    ((0.0, -2.6, 1.0), (11.4, 0.2, 2.0)),  # Right (Y-)
+    # (pos(x,y,z), size(x,y,z)) - 墙壁厚度0.2，高度3.0
+    ((5.6, 0.0, 1.5), (0.2, 5.2, 3.0)),  # Front (X+)
+    ((-5.6, 0.0, 1.5), (0.2, 5.2, 3.0)),  # Back (X-)
+    ((0.0, 2.6, 1.5), (11.4, 0.2, 3.0)),  # Left (Y+)
+    ((0.0, -2.6, 1.5), (11.4, 0.2, 3.0)),  # Right (Y-)
     ((0.0, 0.0, 3.0), (11.6, 5.6, 0.2)),  # Ceiling (Z+)
 ]
 
@@ -124,7 +125,7 @@ for i, data in enumerate(obstacles_data):
 class TutorialEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 5  # 5个dt进行一次决策
-    episode_length_s = 40  # 导航任务最长时间40s
+    episode_length_s = 30  # 导航任务最长时间30s
     random_reset = False  # 是否随机重置环境
 
     action_space = spaces.Box(
@@ -136,7 +137,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     # - spaces definition
     # observation_space = 4
     observation_space = {
-        "camera": spaces.Box(low=0, high=255, shape=(3, 16, 12), dtype=np.uint8),
+        "camera": spaces.Box(low=-1, high=1, shape=(3, 12, 16), dtype=np.float32),
         "robot-state": 8,
         "critic-state": 15,
     }
