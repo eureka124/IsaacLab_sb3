@@ -17,6 +17,7 @@ from isaaclab.utils.math import quat_from_matrix
 from matplotlib import pyplot as plt
 import gymnasium as gym
 import numpy as np
+import os
 
 
 class TutorialEnv(DirectRLEnv):
@@ -110,12 +111,14 @@ class TutorialEnv(DirectRLEnv):
         if self.obstacles:
             self.obstacle_radii = torch.tensor(self.obstacle_radii, device=self.device)
 
+        self.env_step_count = 0
+
     def _setup_scene(self):
         self.robot = self.scene["robot_cfg"]
         # 添加地面平面
-        spawn_ground_plane(
-            prim_path="/World/ground", cfg=GroundPlaneCfg(), size=(700, 700)
-        )
+        # spawn_ground_plane(
+        #     prim_path="/World/ground", cfg=GroundPlaneCfg(), size=(700, 700)
+        # )
         # 克隆环境
         self.scene.clone_environments(copy_from_source=False)
         # 我们需要为 CPU 模拟明确过滤碰撞
@@ -288,6 +291,46 @@ class TutorialEnv(DirectRLEnv):
 
     def _get_observations(self) -> dict:
         depth_norm = self._get_norm_depth_image()
+
+        # Save depth image at step 100
+        self.env_step_count += 1
+        if self.env_step_count == 100:
+            raw_depth = (
+                self.scene["camera"]
+                .data.output["distance_to_camera"][0]
+                .squeeze()
+                .cpu()
+                .numpy()
+            )
+            proc_depth = depth_norm[0].squeeze().cpu().numpy()
+
+            log_dir = (
+                self.cfg.log_dir
+                if hasattr(self.cfg, "log_dir") and self.cfg.log_dir
+                else "."
+            )
+            os.makedirs(log_dir, exist_ok=True)
+
+            # Save raw depth
+            plt.figure()
+            plt.imshow(raw_depth)
+            plt.title(f"Raw Depth at Step {self.env_step_count}")
+            plt.colorbar()
+            plt.savefig(os.path.join(log_dir, f"depth_raw_{self.env_step_count}.png"))
+            plt.close()
+
+            # Save processed depth
+            plt.figure()
+            plt.imshow(proc_depth)
+            plt.title(f"Processed Depth at Step {self.env_step_count}")
+            plt.colorbar()
+            plt.savefig(
+                os.path.join(log_dir, f"depth_processed_{self.env_step_count}.png")
+            )
+            plt.close()
+
+            print(f"Saved depth images at step {self.env_step_count} to {log_dir}")
+
         camera_observation = self.img_buffer.update_buffer(depth_norm)
         # print(camera_observation)
 

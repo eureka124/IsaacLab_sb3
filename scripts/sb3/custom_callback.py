@@ -16,7 +16,7 @@ class CheckpointCallbackWithLimit(CheckpointCallback):
         save_replay_buffer: bool = False,
         save_vecnormalize: bool = False,
         verbose: int = 0,
-        max_keep: int = 5,
+        max_keep: int = 20,
     ):
         super().__init__(
             save_freq,
@@ -143,13 +143,21 @@ class IsaacLogCallback(BaseCallback):
 
         return True
 
+
 class KLAdaptiveLRCallback(BaseCallback):
     """
     A custom callback that adjusts the learning rate based on the KL divergence,
     similar to skrl's KLAdaptiveLR.
     """
 
-    def __init__(self, initial_lr: float, min_lr: float = 1e-6, max_lr: float = 1e-2, kl_threshold: float = 0.016, verbose=0):
+    def __init__(
+        self,
+        initial_lr: float,
+        min_lr: float = 1e-6,
+        max_lr: float = 1e-2,
+        kl_threshold: float = 0.016,
+        verbose=0,
+    ):
         super().__init__(verbose)
         self.current_lr = initial_lr
         self.min_lr = min_lr
@@ -166,15 +174,19 @@ class KLAdaptiveLRCallback(BaseCallback):
         # Note: name_to_value contains the last recorded values
         if "train/approx_kl" in self.logger.name_to_value:
             kl = self.logger.name_to_value["train/approx_kl"]
-            
+
             if kl > self.kl_threshold * 2.0:
                 self.current_lr = max(self.current_lr / 1.5, self.min_lr)
                 if self.verbose > 0:
-                    print(f"KL divergence {kl:.6f} > {self.kl_threshold * 2.0:.6f}. Decreasing LR to {self.current_lr:.6f}")
+                    print(
+                        f"KL divergence {kl:.6f} > {self.kl_threshold * 2.0:.6f}. Decreasing LR to {self.current_lr:.6f}"
+                    )
             elif kl < self.kl_threshold / 2.0:
                 self.current_lr = min(self.current_lr * 1.5, self.max_lr)
                 if self.verbose > 0:
-                    print(f"KL divergence {kl:.6f} < {self.kl_threshold / 2.0:.6f}. Increasing LR to {self.current_lr:.6f}")
-    
+                    print(
+                        f"KL divergence {kl:.6f} < {self.kl_threshold / 2.0:.6f}. Increasing LR to {self.current_lr:.6f}"
+                    )
+
     def _on_step(self) -> bool:
         return True
