@@ -49,12 +49,12 @@ parser.add_argument(
     "--seed", type=int, default=None, help="Seed used for the environment"
 )
 parser.add_argument(
-    "--log_interval", type=int, default=100_000, help="Log data every n timesteps."
+    "--log_interval", type=int, default=100000, help="Log data every n timesteps."
 )
 parser.add_argument(
     "--checkpoint_interval",
     type=int,
-    default=100000,
+    default=1000000,
     help="Interval between checkpoints (in steps).",
 )
 parser.add_argument(

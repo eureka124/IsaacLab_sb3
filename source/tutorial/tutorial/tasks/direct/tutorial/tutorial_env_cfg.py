@@ -101,13 +101,13 @@ MySceneCfg.floor = floor_cfg
 # 均匀分布在 11.2 x 5.2 区域内
 obstacles_data = [
     # Cuboids
-    {"type": "cuboid", "pos": (-3.0, -1.0, 0.9), "size": (0.6, 0.6, 1.8)},
-    {"type": "cuboid", "pos": (0.0, 1.0, 0.9), "size": (0.6, 0.6, 1.8)},
-    {"type": "cuboid", "pos": (3.0, -1.0, 0.9), "size": (0.6, 0.6, 1.8)},
+    {"type": "cuboid", "pos": (-2.7, 0.0, 0.6), "size": (0.6, 0.6, 1.2)},
+    {"type": "cuboid", "pos": (-0.7, -1.5, 0.6), "size": (0.6, 0.6, 1.2)},
+    {"type": "cuboid", "pos": (3.3, -1.5, 0.6), "size": (0.6, 0.6, 1.2)},
     # Cylinders
-    {"type": "cylinder", "pos": (-3.0, 1.0, 0.52), "radius": 0.16, "height": 1.04},
-    {"type": "cylinder", "pos": (0.0, -1.0, 0.52), "radius": 0.16, "height": 1.04},
-    {"type": "cylinder", "pos": (3.0, 1.0, 0.52), "radius": 0.16, "height": 1.04},
+    {"type": "cylinder", "pos": (-0.7, 1.5, 0.52), "radius": 0.16, "height": 1.04},
+    {"type": "cylinder", "pos": (1.3, 0.0, 0.52), "radius": 0.16, "height": 1.04},
+    {"type": "cylinder", "pos": (3.3, 1.5, 0.52), "radius": 0.16, "height": 1.04},
 ]
 
 # 添加障碍物到 MySceneCfg
@@ -144,6 +144,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     decimation = 5  # 5个dt进行一次决策
     episode_length_s = 30  # 导航任务最长时间30s
     random_reset = False  # 是否随机重置环境
+    random_obstacles = True  # 是否随机化障碍物位置
 
     action_space = spaces.Box(
         low=np.array([-0.1, -1.0, -np.pi], dtype=np.float32),  # 每个维度的最小值

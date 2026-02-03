@@ -702,17 +702,19 @@ class TutorialEnv(DirectRLEnv):
                 # 扩展到 batch
                 new_pos = default_pos_local.repeat(len_env_ids, 1)
 
-                # 随机生成噪声 (mean=0, variance=0.5 -> std=sqrt(0.5))
-                noise = torch.randn((len_env_ids, 2), device=self.device) * 0.2
+                if self.cfg.random_obstacles:
+                    # 随机生成噪声 (mean=0, variance=0.5 -> std=sqrt(0.5))
+                    noise = torch.randn((len_env_ids, 2), device=self.device) * 0.2
 
-                # 应用噪声到XY坐标 (在局部坐标系)
-                new_pos[:, :2] += noise
+                    # 应用噪声到XY坐标 (在局部坐标系)
+                    new_pos[:, :2] += noise
 
                 # 加上环境原点 (转换为全局坐标)
                 new_pos += self.scene.env_origins[env_ids]
 
                 # 更新位置
                 obs_default_root_state[:, :3] = new_pos
+                obstacle.write_root_pose_to_sim(obs_default_root_state[:, :7], env_ids)
 
 
 class DepthImageBuffer:
@@ -812,12 +814,12 @@ def compute_rewards(
     penalty_obstacle: torch.Tensor,
 ):
     total_reward = (
-        reward_velocity * 10.0  # 速度在目标方向的分量
-        + 2.0  # 存活奖励
-        - penalty_smooth * 0.5  # 平滑度惩罚
+        reward_velocity * 1.0  # 速度在目标方向的分量
+        + 1.0  # 存活奖励
+        - penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 20.0  # 碰撞惩罚
-        + arrived * 300.0  # 到达奖励
-        # - penalty_obstacle  # 障碍物距离惩罚
+        + arrived * 200.0  # 到达奖励
+        - penalty_obstacle  # 障碍物距离惩罚
     )
     # print("Total Reward:", total_reward)
     # print("Reward Velocity:", reward_velocity)
