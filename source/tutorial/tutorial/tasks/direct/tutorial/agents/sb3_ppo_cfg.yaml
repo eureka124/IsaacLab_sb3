@@ -10,11 +10,6 @@ gamma: 0.99
 n_epochs: 5
 ent_coef: 0.0
 learning_rate: !!float 3e-4
-learning_rate_scheduler: KLAdaptiveLR
-learning_rate_scheduler_kwargs:
-  kl_threshold: 0.01
-clip_range: !!float 0.2
-clip_range_vf: !!float 0.2
 policy_kwargs:
   activation_fn: nn.LeakyReLU
   net_arch:
