@@ -54,7 +54,7 @@ parser.add_argument(
 parser.add_argument(
     "--checkpoint_interval",
     type=int,
-    default=10000,
+    default=100000,
     help="Interval between checkpoints (in steps).",
 )
 parser.add_argument(

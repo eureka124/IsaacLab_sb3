@@ -78,6 +78,23 @@ for i, (pos, size) in enumerate(wall_definitions):
     setattr(MySceneCfg, f"Wall_{i}", wall_cfg)
 
 
+# 定义地板
+floor_cfg = RigidObjectCfg(
+    prim_path="{ENV_REGEX_NS}/Floor",
+    spawn=sim_utils.CuboidCfg(
+        size=(11.6, 5.6, 0.2),  # 覆盖整个区域
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+        mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+        collision_props=sim_utils.CollisionPropertiesCfg(),
+        visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.2, 0.2, 0.2)),
+    ),
+    init_state=RigidObjectCfg.InitialStateCfg(
+        pos=(0.0, 0.0, -0.1)
+    ),  # 地板中心在Z=-0.1，上表面在Z=0
+)
+MySceneCfg.floor = floor_cfg
+
+
 # 定义障碍物
 # 长方体: 0.6 x 0.6 x 1.8 -> Pos Z = 0.9
 # 圆柱体: d=0.16 (r=0.08), h=1.04 -> Pos Z = 0.52

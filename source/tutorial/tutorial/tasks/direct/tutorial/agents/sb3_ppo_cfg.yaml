@@ -1,7 +1,7 @@
 # Reference: https://github.com/DLR-RM/rl-baselines3-zoo/blob/master/hyperparams/ppo.yml#L32
 seed: 123
 
-n_timesteps: !!float 2e7
+n_timesteps: !!float 6e7
 policy: 'MultiInputPolicy'
 n_steps: 512
 batch_size: 256

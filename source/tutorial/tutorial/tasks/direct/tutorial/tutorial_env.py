@@ -460,12 +460,12 @@ class TutorialEnv(DirectRLEnv):
             # 取最近的障碍物距离
             min_dists, _ = torch.min(dists_surface, dim=0)
 
-            # 距离小于1米开始惩罚，0.4米时惩罚为20，中间线性变化
-            # dist <= 0.4 -> 20
+            # 距离小于1米开始惩罚，0.4米时惩罚为4，中间线性变化
+            # dist <= 0.4 -> 4
             # 0.4 < dist < 1.0 -> 线性减小
             # dist >= 1.0 -> 0
             clamped_dists = torch.clamp(min_dists, min=0.4, max=1.0)
-            penalty_obstacle = 20.0 * (1.0 - clamped_dists) / 0.6
+            penalty_obstacle = 4.0 * (1.0 - clamped_dists) / 0.6
 
         # print("Penalty Smooth:", penalty_smooth)
         # print("Reward Velocity:", reward_velocity)
@@ -817,7 +817,7 @@ def compute_rewards(
         - penalty_smooth * 0.5  # 平滑度惩罚
         - collided * 20.0  # 碰撞惩罚
         + arrived * 300.0  # 到达奖励
-        - penalty_obstacle  # 障碍物距离惩罚
+        # - penalty_obstacle  # 障碍物距离惩罚
     )
     # print("Total Reward:", total_reward)
     # print("Reward Velocity:", reward_velocity)
