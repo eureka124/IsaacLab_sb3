@@ -4,16 +4,11 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import torch
-import traceback
-import isaaclab.sim as sim_utils
 from isaaclab.envs import DirectRLEnv
-from isaaclab.assets import RigidObject
-from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from .tutorial_env_cfg import TutorialEnvCfg
-from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG  # isort: skip
+from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
 from isaaclab.markers import VisualizationMarkers
 from omni_drones.controllers import LeePositionController
-from isaaclab.utils.math import quat_from_matrix
 from matplotlib import pyplot as plt
 import gymnasium as gym
 import numpy as np
@@ -211,12 +206,12 @@ class TutorialEnv(DirectRLEnv):
 
         # 高度控制交给 Lee 控制器：设置目标高度为 0.8，目标垂直速度为 0
         target_z = 0.8
-        target_vel_z = torch.zeros((self.num_envs, 1), device=self.device)
+        target_vel_z = self.robot.data.root_lin_vel_w[:, 2:3]
 
         target_vel = torch.cat([target_vel_xy, target_vel_z], dim=-1)
 
         # 积分更新目标位置
-        self.target_pos_setpoint[:, 0:2] += target_vel_xy * self.cfg.sim.dt
+        self.target_pos_setpoint[:, 0:2] = self.robot.data.root_pos_w[:, 0:2]
         self.target_pos_setpoint[:, 2] = target_z
 
         # 4. 调用 LeePositionController
@@ -236,7 +231,7 @@ class TutorialEnv(DirectRLEnv):
         # 5. 从电机指令还原物理力和力矩 (用于 set_external_force_and_torque)
         # cmd = (mixer @ [ang_acc, thrust].T).T / max_thrusts * 2 - 1
         # 我们通过逆运算获取 thrust 和 ang_acc
-        real_cmd = (cmd + 1) / 2 * self.controller.max_thrusts
+        real_cmd = (cmd + 1.0) / 2.0 * self.controller.max_thrusts
 
         # ang_acc_thrust = (mixer_pinverse @ real_cmd.T).T
         # 注意: LeePositionController 内部使用了 mixer = A.T @ (A @ A.T).inverse() @ I
@@ -567,13 +562,13 @@ class TutorialEnv(DirectRLEnv):
 
         current_sum = sum(self.success_rate_count)
         # 每 100 次事件打印一次
-        if current_sum > 0 and current_sum % 100 == 0:
+        if current_sum / 100.0 >= 1:
             if not self.last_condition_state:  # 防止同一步重复打印
                 success_rates = (
                     self.success_rate_count / self.success_rate_count.sum().item() * 100
                 )
                 print(
-                    f"Stats [Timeout, Collision, Arrived]: [{success_rates[0]:.2f}%, {success_rates[1]:.2f}%, {success_rates[2]:.2f}%]"
+                    f"Stats [Timeout, Collision, Arrived, total]: [{success_rates[0]:.2f}%, {success_rates[1]:.2f}%, {success_rates[2]:.2f}%, {current_sum}]"
                 )
                 self.last_condition_state = True
                 self.success_rate_count[:] = 0
@@ -703,8 +698,8 @@ class TutorialEnv(DirectRLEnv):
                 new_pos = default_pos_local.repeat(len_env_ids, 1)
 
                 if self.cfg.random_obstacles:
-                    # 随机生成噪声 (mean=0, variance=0.5 -> std=sqrt(0.5))
-                    noise = torch.randn((len_env_ids, 2), device=self.device) * 0.2
+                    # 随机生成噪声 (mean=0, std=0.7)
+                    noise = torch.randn((len_env_ids, 2), device=self.device) * 0.7
 
                     # 应用噪声到XY坐标 (在局部坐标系)
                     new_pos[:, :2] += noise
