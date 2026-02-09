@@ -266,11 +266,11 @@ class TutorialEnv(DirectRLEnv):
     def _get_norm_depth_image(self) -> torch.Tensor:
         depth_frame = self.scene["camera"].data.output["distance_to_camera"].clone()
 
-        # 1. 裁剪至 0.3 - 24.0
-        depth_frame = torch.clamp(depth_frame, min=0.3, max=24.0)
+        # 1. 裁剪至 0.3 - 10.0
+        depth_frame = torch.clamp(depth_frame, min=0.3, max=10.0)
 
         # 2. 归一化至 0 - 1
-        depth_frame = (depth_frame - 0.3) / (24.0 - 0.3)
+        depth_frame = (depth_frame - 0.3) / (10.0 - 0.3)
 
         # 3. 4x4 Max Pooling
         # 输入需要 (N, C, H, W)，当前为 (N, H, W, 1)
@@ -508,7 +508,7 @@ class TutorialEnv(DirectRLEnv):
         distances = torch.norm(target - pos, p=2, dim=-1)  # (num_envs,)
         self.distances = distances  # 保存用于可能的奖励计算
 
-        # 判断是否到达 (阈值 0.1 米)
+        # 判断是否到达 (阈值 0.4 米)
         arrived = distances <= 0.4
         self.arrived = arrived
 
@@ -562,7 +562,7 @@ class TutorialEnv(DirectRLEnv):
 
         current_sum = sum(self.success_rate_count)
         # 每 100 次事件打印一次
-        if current_sum / 100.0 >= 1:
+        if current_sum >= 100.0:
             if not self.last_condition_state:  # 防止同一步重复打印
                 success_rates = (
                     self.success_rate_count / self.success_rate_count.sum().item() * 100

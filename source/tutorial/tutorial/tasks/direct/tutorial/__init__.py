@@ -19,6 +19,6 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.tutorial_env_cfg:TutorialEnvCfg",
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
-        "sb3_cfg_entry_point": f"{agents.__name__}:god_view_sb3_sb3.yaml",
+        "sb3_cfg_entry_point": f"{agents.__name__}:sb3_ppo_cfg.yaml",
     },
 )

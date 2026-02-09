@@ -35,7 +35,7 @@ class MySceneCfg(InteractiveSceneCfg):
             focus_distance=10.0,
             horizontal_aperture=19.54085363,
             vertical_aperture=11.37763669,
-            clipping_range=(0.1, 15),
+            clipping_range=(0.3, 10),
         ),
         offset=TiledCameraCfg.OffsetCfg(
             pos=(0.1, 0.0, 0.3), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"
