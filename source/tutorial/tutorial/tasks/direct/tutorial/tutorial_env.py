@@ -413,8 +413,8 @@ class TutorialEnv(DirectRLEnv):
         direction_vector = (
             target_pos - robot_pos
         )  # 目标点相对机器人的位置 (num_envs, 2)
-        direction_vector = direction_vector / torch.norm(
-            direction_vector, dim=-1, keepdim=True
+        direction_vector = direction_vector / (
+            torch.norm(direction_vector, dim=-1, keepdim=True) + 1e-6
         )  # 归一化方向向量 (num_envs, 2)
         linear_velocity = self.robot.data.root_lin_vel_w[
             :, :2
@@ -429,6 +429,31 @@ class TutorialEnv(DirectRLEnv):
         action_diff = self.actions - self.prev_actions  # 动作变化 (num_envs    , 2)
         penalty_smooth = torch.norm(action_diff, p=2, dim=1)  # 平滑惩罚 (num_envs,)
         self.prev_actions = self.actions.clone()  # 更新前一动作
+
+        # 计算障碍物距离惩罚
+        if len(self.obstacles) > 0:
+            obstacle_pos = torch.stack(
+                [obs.data.root_pos_w[:, :2] for obs in self.obstacles], dim=0
+            )  # (num_obstacles, num_envs, 2)
+            # 计算机器人到障碍物中心的距离
+            # robot_pos: (num_envs, 2) -> unsqueeze(0) -> (1, num_envs, 2)
+            dists = torch.norm(
+                obstacle_pos - robot_pos.unsqueeze(0), dim=-1
+            )  # (num_obstacles, num_envs)
+
+            # 计算到障碍物表面的距离: 中心距离 - 障碍物半径
+            # self.obstacle_radii: (num_obstacles,) -> unsqueeze(1) -> (num_obstacles, 1)
+            dist_to_surface = dists - self.obstacle_radii.unsqueeze(1)
+
+            # 找到最近的障碍物距离 (num_envs,)
+            min_dist_to_surface, _ = torch.min(dist_to_surface, dim=0)
+
+            # 计算惩罚: 距离1m时惩罚为0, 距离0.4m时惩罚为3. 0.4m到1m之间线性变化 (P = 5 * (1 - d))
+            # clamp min=0 确保距离大于1m时无惩罚
+            obstacle_penalty = torch.clamp(5.0 * (1.0 - min_dist_to_surface), min=0.0)
+        else:
+            obstacle_penalty = torch.zeros(self.num_envs, device=self.device)
+
         # print("Penalty Smooth:", penalty_smooth)
         # print("Reward Velocity:", reward_velocity)
         # print("Collided:", self.collided)
@@ -438,10 +463,27 @@ class TutorialEnv(DirectRLEnv):
             self.collided,
             penalty_smooth,
             self.arrived,
+            obstacle_penalty,
         )  # print(self.robot.data)
 
         # 检查 total_reward 是否包含 NaN 值，如果有则中断程序
         if torch.isnan(total_reward).any():
+            if torch.isnan(reward_velocity).any():
+                print("NaN detected in reward_velocity")
+                print("linear_velocity:", linear_velocity)
+                print("direction_vector:", direction_vector)
+                print("robot_pos:", robot_pos)
+                print("target_pos:", target_pos)
+            if torch.isnan(penalty_smooth).any():
+                print("NaN detected in penalty_smooth")
+                print("actions:", self.actions)
+                print("prev_actions:", self.prev_actions)
+            if torch.isnan(self.collided.float()).any():
+                print("NaN detected in collided")
+            if torch.isnan(self.arrived.float()).any():
+                print("NaN detected in arrived")
+            if torch.isnan(obstacle_penalty).any():
+                print("NaN detected in obstacle_penalty")
             raise RuntimeError("total_reward contains NaN values, interrupting program")
 
         return total_reward
@@ -710,6 +752,7 @@ def compute_rewards(
     collided: torch.Tensor,
     penalty_smooth: torch.Tensor,
     arrived: torch.Tensor,
+    penalty_obstacle: torch.Tensor,
 ):
     total_reward = (
         reward_velocity * 1.0  # 速度在目标方向的分量
@@ -717,12 +760,14 @@ def compute_rewards(
         - penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 20.0  # 碰撞惩罚
         + arrived * 200.0  # 到达奖励
+        - penalty_obstacle  # 障碍物距离惩罚
     )
     # print("Total Reward:", total_reward)
     # print("Reward Velocity:", reward_velocity)
     # print("Penalty Smooth:", penalty_smooth)
     # print("Collided:", collided)
     # print("Arrived:", arrived)
+    # print("Penalty Obstacle:", penalty_obstacle)
     return total_reward  # 返回 (num_envs,) 以匹配 SB3 预期
 
 
