@@ -155,7 +155,6 @@ from custom_extractor import CustomCombinedExtractor, GodViewExtractor
 from custom_callback import (
     IsaacLogCallback,
     CheckpointCallbackWithLimit,
-    KLAdaptiveLRCallback,
 )
 
 
@@ -297,22 +296,6 @@ def main(
         policy_kwargs["features_extractor_class"] = CustomCombinedExtractor
     agent_cfg["policy_kwargs"] = policy_kwargs
 
-    # Check for KLAdaptiveLR in agent config
-    kl_adaptive_config = None
-    if agent_cfg.get("learning_rate_scheduler") == "KLAdaptiveLR":
-        # Extract kwargs for the scheduler
-        scheduler_kwargs = agent_cfg.get("learning_rate_scheduler_kwargs", {})
-        kl_adaptive_config = {
-            "initial_lr": agent_cfg.get("learning_rate", 3e-4),
-            "kl_threshold": scheduler_kwargs.get("kl_threshold", 0.016),
-            "min_lr": scheduler_kwargs.get("min_lr", 1e-6),
-            "max_lr": scheduler_kwargs.get("max_lr", 1e-2),
-        }
-        # Remove scheduler related keys as PPO doesn't support them
-        agent_cfg.pop("learning_rate_scheduler")
-        if "learning_rate_scheduler_kwargs" in agent_cfg:
-            agent_cfg.pop("learning_rate_scheduler_kwargs")
-
     agent = PPO(policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg)
     if args_cli.checkpoint is not None:
         agent = agent.load(args_cli.checkpoint, env, print_system_info=True)
@@ -323,19 +306,14 @@ def main(
         save_path=log_dir,
         name_prefix="model",
         verbose=2,
-        max_keep=5,
+        max_keep=20,
     )
-    isaac_log_callback = IsaacLogCallback(log_freq=100)  # 每100个episode记录一次
+    isaac_log_callback = IsaacLogCallback(log_freq=500)  # 每500个episode记录一次
     callbacks = [
         checkpoint_callback,
         LogEveryNTimesteps(n_steps=args_cli.log_interval),
         isaac_log_callback,
     ]
-
-    if kl_adaptive_config:
-        print(f"Using KLAdaptiveLR callback with config: {kl_adaptive_config}")
-        kl_callback = KLAdaptiveLRCallback(**kl_adaptive_config, verbose=1)
-        callbacks.append(kl_callback)
 
     # train the agent
     with contextlib.suppress(KeyboardInterrupt):

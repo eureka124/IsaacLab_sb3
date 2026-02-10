@@ -755,11 +755,11 @@ def compute_rewards(
     penalty_obstacle: torch.Tensor,
 ):
     total_reward = (
-        reward_velocity * 1.0  # 速度在目标方向的分量
-        + 1.0  # 存活奖励
+        reward_velocity * 10.0  # 速度在目标方向的分量
+        + 2.0  # 存活奖励
         - penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 20.0  # 碰撞惩罚
-        + arrived * 200.0  # 到达奖励
+        + arrived * 300.0  # 到达奖励
         - penalty_obstacle  # 障碍物距离惩罚
     )
     # print("Total Reward:", total_reward)
