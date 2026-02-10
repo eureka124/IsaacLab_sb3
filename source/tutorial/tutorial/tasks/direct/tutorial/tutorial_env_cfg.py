@@ -27,8 +27,8 @@ class MySceneCfg(InteractiveSceneCfg):
     camera = TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/base_link/front_cam",
         update_period=0.04,
-        height=16,
-        width=12,  # 深度相机的输出(16, 12)
+        height=48,
+        width=64,  # 深度相机的输出(48, 64)
         data_types=["distance_to_image_plane"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=10.4775,
@@ -146,7 +146,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     # - spaces definition
     # observation_space = 4
     observation_space = {
-        "camera": spaces.Box(low=0, high=255, shape=(3, 16, 12), dtype=np.uint8),
+        "camera": spaces.Box(low=0, high=255, shape=(3, 12, 16), dtype=np.uint8),
         "robot-state": 8,
         "critic-state": 15,
     }

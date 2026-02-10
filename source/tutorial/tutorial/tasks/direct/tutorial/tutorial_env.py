@@ -295,6 +295,12 @@ class TutorialEnv(DirectRLEnv):
         depth_frame = (
             self.scene["camera"].data.output["distance_to_image_plane"].clone()
         )
+        # 最小池化降采样 (kernel_size=4, stride=4) 从 (48, 64) 到 (12, 16)
+        depth_frame = torch.nn.functional.max_pool2d(
+            -depth_frame, kernel_size=4, stride=4
+        )
+        depth_frame = -depth_frame  # 恢复原始深度值
+
         # 归一化深度图
         max_vals = 10.0  # 相机最远探测距离m
         depth_frame = torch.nan_to_num(
@@ -307,8 +313,8 @@ class TutorialEnv(DirectRLEnv):
         depth_frame = depth_frame / max_vals
         # 转换为 0-255 uint8
         depth_frame = (depth_frame * 255.0).round().clamp(0, 255).to(torch.uint8)
-        # print(depth_norm.shape) # (env_num, 1, 16, 12)
-        return depth_frame  # shape:[env_num, 1, 16, 12]
+        # print(depth_norm.shape) # (env_num, 1, 12, 16)
+        return depth_frame  # shape:[env_num, 1, 12, 16]
 
     def _get_observations(self) -> dict:
         depth_norm = self._get_norm_depth_image()
@@ -678,9 +684,9 @@ class DepthImageBuffer:
         """
         向量化更新缓冲区
         Args:
-            depth_norm: 形状为(num_envs, 16, 12, 1)的深度图张量
+            depth_norm: 形状为(num_envs, 12, 16, 1)的深度图张量
         Returns:
-            combined_tensor: 形状为(num_envs, 3, 16, 12)的PyTorch张量
+            combined_tensor: 形状为(num_envs, 3, 12, 16)的PyTorch张量
         """
         if self.buffer is None:
             h, w = depth_norm.shape[1], depth_norm.shape[2]
