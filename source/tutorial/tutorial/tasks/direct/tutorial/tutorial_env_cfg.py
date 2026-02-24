@@ -40,6 +40,17 @@ class MySceneCfg(InteractiveSceneCfg):
             pos=(0.0, 0.0, -1.0), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"
         ),
     )
+    # 添加地板
+    floor = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/Floor",
+        spawn=sim_utils.CuboidCfg(
+            size=(25.0, 25.0, 0.1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -0.04)),
+    )
 
     # 接触传感器
     # contact_forces: ContactSensorCfg = ContactSensorCfg(

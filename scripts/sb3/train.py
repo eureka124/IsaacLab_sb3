@@ -320,7 +320,7 @@ def main(
         agent.learn(
             total_timesteps=n_timesteps,
             callback=callbacks,
-            progress_bar=False,
+            progress_bar=True,
             log_interval=None,
         )
     # save the final model

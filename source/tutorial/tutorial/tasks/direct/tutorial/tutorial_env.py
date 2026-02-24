@@ -9,7 +9,7 @@ from isaaclab.envs import DirectRLEnv
 from isaaclab.assets import RigidObject
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from .tutorial_env_cfg import TutorialEnvCfg
-from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG  # isort: skip
+from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG
 from isaaclab.markers import VisualizationMarkers
 from omni_drones.controllers import LeePositionController
 from isaaclab.utils.math import quat_from_matrix
@@ -294,12 +294,13 @@ class TutorialEnv(DirectRLEnv):
     def _get_norm_depth_image(self) -> torch.Tensor:
         depth_frame = (
             self.scene["camera"].data.output["distance_to_image_plane"].clone()
-        )
+        ).squeeze(
+            -1
+        )  # shape: [env_num, 1, 48, 64]
         # 最小池化降采样 (kernel_size=4, stride=4) 从 (48, 64) 到 (12, 16)
-        depth_frame = torch.nn.functional.max_pool2d(
+        depth_frame = -torch.nn.functional.max_pool2d(
             -depth_frame, kernel_size=4, stride=4
         )
-        depth_frame = -depth_frame  # 恢复原始深度值
 
         # 归一化深度图
         max_vals = 10.0  # 相机最远探测距离m
