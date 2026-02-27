@@ -30,10 +30,10 @@ class TutorialEnv(DirectRLEnv):
             and "camera" in self.observation_space.spaces
         ):
             self.observation_space.spaces["camera"] = gym.spaces.Box(
-                low=0,
-                high=255,
+                low=-1,
+                high=1,
                 shape=self.observation_space.spaces["camera"].shape,
-                dtype=np.uint8,
+                dtype=np.float32,
             )
 
         # print("__init__")
@@ -45,11 +45,11 @@ class TutorialEnv(DirectRLEnv):
         marker_cfg.prim_path = "/Visuals/Command/goal_position"
         self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
 
-        # 速度方向箭头可视化
-        arrow_cfg = RED_ARROW_X_MARKER_CFG.copy()
-        arrow_cfg.markers["arrow"].scale = (2, 0.4, 0.4)  # 默认缩放
-        arrow_cfg.prim_path = "/Visuals/Command/velocity_arrow"
-        self.vel_arrow_visualizer = VisualizationMarkers(arrow_cfg)
+        # # 速度方向箭头可视化
+        # arrow_cfg = RED_ARROW_X_MARKER_CFG.copy()
+        # arrow_cfg.markers["arrow"].scale = (2, 0.4, 0.4)  # 默认缩放
+        # arrow_cfg.prim_path = "/Visuals/Command/velocity_arrow"
+        # self.vel_arrow_visualizer = VisualizationMarkers(arrow_cfg)
 
         self.img_buffer = DepthImageBuffer(self.cfg.scene.num_envs, self.device)
 
@@ -108,7 +108,7 @@ class TutorialEnv(DirectRLEnv):
     def _setup_scene(self):
         self.robot = self.scene["robot_cfg"]
         # 添加地面平面
-        spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg())
+        # spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg())
         # 克隆环境
         self.scene.clone_environments(copy_from_source=False)
         # 我们需要为 CPU 模拟明确过滤碰撞
@@ -256,40 +256,40 @@ class TutorialEnv(DirectRLEnv):
         joint_vel_targets = rpms * (2 * torch.pi / 60.0)  # 单位转换
         self.robot.write_joint_velocity_to_sim(joint_vel_targets, env_ids=None)
 
-    def _update_velocity_arrow(self):
-        # 获取当前速度
-        vel = self.robot.data.root_lin_vel_w
-        speed = torch.norm(vel, dim=-1, keepdim=True)
+    # def _update_velocity_arrow(self):
+    #     # 获取当前速度
+    #     vel = self.robot.data.root_lin_vel_w
+    #     speed = torch.norm(vel, dim=-1, keepdim=True)
 
-        # 计算位置：在无人机上方 0.5m
-        pos = self.robot.data.root_pos_w + torch.tensor([0, 0, 0.5], device=self.device)
+    #     # 计算位置：在无人机上方 0.5m
+    #     pos = self.robot.data.root_pos_w + torch.tensor([0, 0, 0.5], device=self.device)
 
-        # 计算朝向：将 X 轴对齐到速度方向
-        # 归一化速度向量作为前向向量 (X)
-        forward = vel / (speed + 1e-6)
-        # 假设世界上方为 Z 轴
-        up = torch.tensor([0.0, 0.0, 1.0], device=self.device).expand_as(forward)
-        # 计算右向向量 (Y) = Up x Forward
-        right = torch.cross(up, forward, dim=-1)
-        right = right / (torch.norm(right, dim=-1, keepdim=True) + 1e-6)
-        # 重新计算上向向量 (Z) = Forward x Right
-        actual_up = torch.cross(forward, right, dim=-1)
+    #     # 计算朝向：将 X 轴对齐到速度方向
+    #     # 归一化速度向量作为前向向量 (X)
+    #     forward = vel / (speed + 1e-6)
+    #     # 假设世界上方为 Z 轴
+    #     up = torch.tensor([0.0, 0.0, 1.0], device=self.device).expand_as(forward)
+    #     # 计算右向向量 (Y) = Up x Forward
+    #     right = torch.cross(up, forward, dim=-1)
+    #     right = right / (torch.norm(right, dim=-1, keepdim=True) + 1e-6)
+    #     # 重新计算上向向量 (Z) = Forward x Right
+    #     actual_up = torch.cross(forward, right, dim=-1)
 
-        # 构造旋转矩阵 [X, Y, Z]
-        rot_mat = torch.stack([forward, right, actual_up], dim=-1)
-        # 转换为四元数
-        quat = quat_from_matrix(rot_mat)
+    #     # 构造旋转矩阵 [X, Y, Z]
+    #     rot_mat = torch.stack([forward, right, actual_up], dim=-1)
+    #     # 转换为四元数
+    #     quat = quat_from_matrix(rot_mat)
 
-        # 动态调整箭头长度，使其与速度成正比 (可选)
-        # 这里我们让箭头长度 = 速度大小 * 0.5，最小 0.1
-        scale_x = speed * 0.5
-        scales = torch.cat(
-            [scale_x, torch.full_like(scale_x, 0.1), torch.full_like(scale_x, 0.1)],
-            dim=-1,
-        )
+    #     # 动态调整箭头长度，使其与速度成正比 (可选)
+    #     # 这里我们让箭头长度 = 速度大小 * 0.5，最小 0.1
+    #     scale_x = speed * 0.5
+    #     scales = torch.cat(
+    #         [scale_x, torch.full_like(scale_x, 0.1), torch.full_like(scale_x, 0.1)],
+    #         dim=-1,
+    #     )
 
-        # 更新可视化
-        self.vel_arrow_visualizer.visualize(pos, quat, scales=scales)
+    #     # 更新可视化
+    #     self.vel_arrow_visualizer.visualize(pos, quat, scales=scales)
 
     def _get_norm_depth_image(self) -> torch.Tensor:
         depth_frame = (
@@ -311,9 +311,7 @@ class TutorialEnv(DirectRLEnv):
             neginf=0.0,
         )
         depth_frame = torch.clamp(depth_frame, min=0.0, max=max_vals)
-        depth_frame = depth_frame / max_vals
-        # 转换为 0-255 uint8
-        depth_frame = (depth_frame * 255.0).round().clamp(0, 255).to(torch.uint8)
+        depth_frame = depth_frame / max_vals  # 归一化到 [0, 1]
         # print(depth_norm.shape) # (env_num, 1, 12, 16)
         return depth_frame  # shape:[env_num, 1, 12, 16]
 
@@ -409,7 +407,7 @@ class TutorialEnv(DirectRLEnv):
             },
         }
         # 更新速度箭头可视化
-        self._update_velocity_arrow()
+        # self._update_velocity_arrow()
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
