@@ -765,7 +765,7 @@ def compute_rewards(
         - penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 20.0  # 碰撞惩罚
         + arrived * 300.0  # 到达奖励
-        - penalty_obstacle  # 障碍物距离惩罚
+        - penalty_obstacle * 2  # 障碍物距离惩罚
     )
     # print("Total Reward:", total_reward)
     # print("Reward Velocity:", reward_velocity)
