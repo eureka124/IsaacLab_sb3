@@ -403,9 +403,10 @@ class TutorialEnv(DirectRLEnv):
             "policy": {
                 "robot-state": obs,
                 "camera": camera_observation,
-                "critic-state": critic_obs,
+                "critic-state": torch.zeros_like(critic_obs),
             },
         }
+        # print("Observations:", {k: v for k, v in observations["policy"].items()})
         # 更新速度箭头可视化
         # self._update_velocity_arrow()
         return observations
@@ -576,56 +577,90 @@ class TutorialEnv(DirectRLEnv):
         # print("Resetting envs:", env_ids)
         # 将重置的环境位置偏移到对应环境的原点位置
         default_root_state[:, :3] += self.scene.env_origins[env_ids]
+
+        len_env_ids = len(env_ids)
+
+        # Grid Logic
+        rand_vals = torch.rand((len_env_ids, 100), device=self.device)
+        perm = torch.argsort(rand_vals, dim=1)  # (len_env_ids, 100)
+
+        obs_grid_indices = perm[:, :60]  # (len_env_ids, 60)
+        start_grid_indices = perm[:, 60]  # (len_env_ids,)
+        goal_grid_indices = perm[:, 61]  # (len_env_ids,)
+
+        def get_grid_coords_batch(indices):
+            row = indices // self.grid_size
+            col = indices % self.grid_size
+            # -4.5 to 4.5
+            x_center = (row - (self.grid_size / 2 - 0.5)) * self.cell_size
+            y_center = (col - (self.grid_size / 2 - 0.5)) * self.cell_size
+            return x_center, y_center
+
+        # Place Obstacles
+        if len(self.obstacles) > 0:
+            for k in range(len(self.obstacles)):
+                if k >= 60:
+                    break
+
+                grid_idx = obs_grid_indices[:, k]
+                cx, cy = get_grid_coords_batch(grid_idx)
+                r = self.obstacle_radii[k]
+
+                max_offset = (self.cell_size / 2.0) - r
+                max_offset = torch.clamp(max_offset, min=0.0)
+
+                offset_x = (
+                    torch.rand(len_env_ids, device=self.device) * 2 - 1
+                ) * max_offset
+                offset_y = (
+                    torch.rand(len_env_ids, device=self.device) * 2 - 1
+                ) * max_offset
+
+                obs_x = cx + offset_x
+                obs_y = cy + offset_y
+
+                obs_defaults = (
+                    self.obstacles[k].data.default_root_state[env_ids].clone()
+                )
+                obs_defaults[:, 0] = obs_x + self.scene.env_origins[env_ids, 0]
+                obs_defaults[:, 1] = obs_y + self.scene.env_origins[env_ids, 1]
+
+                self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
+                self.obstacles[k].write_root_velocity_to_sim(
+                    obs_defaults[:, 7:], env_ids
+                )
+
+        # Place Robot (Start)
+        cx_s, cy_s = get_grid_coords_batch(start_grid_indices)
+        offset_x_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
+            self.cell_size / 2 - 0.3
+        )
+        offset_y_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
+            self.cell_size / 2 - 0.3
+        )
+        start_x = cx_s + offset_x_s
+        start_y = cy_s + offset_y_s
+
+        # Overwrite Robot X, Y
+        default_root_state[:, 0] = start_x + self.scene.env_origins[env_ids, 0]
+        default_root_state[:, 1] = start_y + self.scene.env_origins[env_ids, 1]
+
         # 设置机器人速度
         self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
 
-        # 为重置的环境采样新的目标位置
-        len_env_ids = len(env_ids)
-
-        # 边界定义 (保留 4.0 的安全距离)
-        bound = self.cfg.scene.env_spacing / 2.0
-
-        # 随机选择 4 条边: 0->(-bound, rand), 1->(bound, rand), 2->(rand, -bound), 3->(rand, bound)
-        edge_indices = torch.randint(0, 4, (len_env_ids,), device=self.device)
-
-        x = torch.zeros(len_env_ids, device=self.device)
-        y = torch.zeros(len_env_ids, device=self.device)
-
-        # 在边界范围内随机生成坐标值
-        random_vals = torch.empty(len_env_ids, device=self.device).uniform_(
-            -bound, bound
+        # Place Target (Goal)
+        cx_g, cy_g = get_grid_coords_batch(goal_grid_indices)
+        offset_x_g = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
+            self.cell_size / 2 - 0.2
         )
+        offset_y_g = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
+            self.cell_size / 2 - 0.2
+        )
+        target_x = cx_g + offset_x_g
+        target_y = cy_g + offset_y_g
+        target_z = torch.ones_like(target_x) * 2.0
 
-        # Edge 0: x = -bound
-        mask = edge_indices == 0
-        x[mask] = -bound
-        y[mask] = random_vals[mask]
-
-        # Edge 1: x = bound
-        mask = edge_indices == 1
-        x[mask] = bound
-        y[mask] = random_vals[mask]
-
-        # Edge 2: y = -bound
-        mask = edge_indices == 2
-        x[mask] = random_vals[mask]
-        y[mask] = -bound
-
-        # Edge 3: y = bound
-        mask = edge_indices == 3
-        x[mask] = random_vals[mask]
-        y[mask] = bound
-
-        x = x.unsqueeze(dim=1)
-        y = y.unsqueeze(dim=1)
-
-        z = torch.zeros(len_env_ids, device=self.device).uniform_(2, 2).unsqueeze(dim=1)
-        xyz = torch.cat((x, y, z), dim=-1)
-        # print("Sampled target positions for reset envs:", xyz)
-
-        # 向量化更新：
-        # 1. xyz 是局部坐标，加上对应环境的原点坐标 (env_origins[env_ids]) 转换为全局坐标
-        # 2. 直接使用索引 [env_ids] 更新 self.target_pos 中对应的行，未重置的环境保持不变
+        xyz = torch.stack((target_x, target_y, target_z), dim=-1)
         self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
 
         # 获取目标点相对机器人位置的yaw角度

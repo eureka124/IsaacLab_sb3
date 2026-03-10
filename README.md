@@ -4,12 +4,16 @@
 |[seed=1](logs/sb3/Template-Tutorial-Direct-v0/2026-02-27_21-35-21) [seed=2](logs/sb3/Template-Tutorial-Direct-v0/2026-02-27_23-34-36) [seed=3](logs/sb3/Template-Tutorial-Direct-v0/2026-02-28_01-33-58)|[id](ae45ecff0427c91d1f20368cde113c27249dfad5)|障碍物距离惩罚翻倍|![success_rate](image.png)|
 
 # 训练3
+固定场景work版本,成功率超过97%，棋盘格随机场景成功率93%,Gazebo不能完全work
 ## 种子/模型路径：
 [seed=789](logs/sb3/Template-Tutorial-Direct-v0/2026-03-05_16-10-44)
 [seed=123](logs/sb3/Template-Tutorial-Direct-v0/2026-03-07_15-09-26)
 [seed=456](logs/sb3/Template-Tutorial-Direct-v0/2026-03-07_16-35-21)
-## 提交id[id](3d181531ee5dca4f83615ad0d3b7d8f6ac9304da)
+## 提交id
+[id](3d181531ee5dca4f83615ad0d3b7d8f6ac9304da)
 ## 主要修改：
+奖励函数
+动作空间速度上下限
 ```python
 obstacle_penalty = torch.clamp(4.0 * (0.8 - min_dist_to_surface), min=0.0)
     total_reward = (
@@ -24,3 +28,5 @@ obstacle_penalty = torch.clamp(4.0 * (0.8 - min_dist_to_surface), min=0.0)
 ```
 ## 成功率曲线
 ![alt text](image-2.png)
+
+# 训练4
