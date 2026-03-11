@@ -128,7 +128,7 @@ import random
 import time
 from datetime import datetime
 
-from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.callbacks import CheckpointCallback, LogEveryNTimesteps
 from stable_baselines3.common.vec_env import VecNormalize
 
@@ -296,7 +296,9 @@ def main(
         policy_kwargs["features_extractor_class"] = CustomCombinedExtractor
     agent_cfg["policy_kwargs"] = policy_kwargs
 
-    agent = PPO(policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg)
+    agent = RecurrentPPO(
+        policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg
+    )
     if args_cli.checkpoint is not None:
         agent = agent.load(args_cli.checkpoint, env, print_system_info=True)
 
@@ -308,7 +310,7 @@ def main(
         verbose=2,
         max_keep=20,
     )
-    isaac_log_callback = IsaacLogCallback(log_freq=500)  # 每500个episode记录一次
+    isaac_log_callback = IsaacLogCallback(log_freq=2000)  # 每500个episode记录一次
     callbacks = [
         checkpoint_callback,
         LogEveryNTimesteps(n_steps=args_cli.log_interval),

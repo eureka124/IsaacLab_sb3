@@ -15,9 +15,19 @@ import os
 sys.path.append(
     os.path.join(
         os.path.dirname(__file__),
+        "../../source/tutorial",
+    )
+)
+
+sys.path.append(
+    os.path.join(
+        os.path.dirname(__file__),
         "../../source/tutorial/tutorial/tasks/direct/tutorial/agents",
     )
 )
+import tutorial  # noqa: F401
+
+from custom_extractor import CustomCombinedExtractor, GodViewExtractor  # noqa: F401
 from isaaclab.app import AppLauncher
 
 # add argparse arguments
@@ -99,8 +109,9 @@ import os
 import random
 import time
 import torch
+import numpy as np
 
-from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.vec_env import VecNormalize
 
 from isaaclab.envs import (
@@ -225,12 +236,14 @@ def main(
 
     # create agent from stable baselines
     print(f"Loading checkpoint from: {checkpoint_path}")
-    agent = PPO.load(checkpoint_path, env, print_system_info=True)
+    agent = RecurrentPPO.load(checkpoint_path, env, print_system_info=True)
 
     dt = env.unwrapped.step_dt
 
     # reset environment
     obs = env.reset()
+    lstm_states = None
+    episode_starts = np.ones((env.num_envs,), dtype=bool)
     timestep = 0
     # simulate environment
     while simulation_app.is_running():
@@ -238,9 +251,15 @@ def main(
         # run everything in inference mode
         with torch.inference_mode():
             # agent stepping
-            actions, _ = agent.predict(obs, deterministic=True)
+            actions, lstm_states = agent.predict(
+                obs,
+                state=lstm_states,
+                episode_start=episode_starts,
+                deterministic=True,
+            )
             # env stepping
-            obs, _, _, _ = env.step(actions)
+            obs, _, dones, _ = env.step(actions)
+            episode_starts = dones.astype(bool)
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video
