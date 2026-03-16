@@ -631,12 +631,14 @@ class TutorialEnv(DirectRLEnv):
                 )
 
         # Place Robot (Start)
+        # 边界裕量 0.5 > 碰撞半径 0.4，保证与相邻格障碍物的安全距离
+        # 相邻格最小中心距 = cell_size - (cell_size/2-0.5) - (cell_size/2-r) = 0.5+r > r+0.4 ✓
         cx_s, cy_s = get_grid_coords_batch(start_grid_indices)
         offset_x_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.3
+            self.cell_size / 2 - 0.5
         )
         offset_y_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.3
+            self.cell_size / 2 - 0.5
         )
         start_x = cx_s + offset_x_s
         start_y = cy_s + offset_y_s
