@@ -1,7 +1,22 @@
-| 日志地址  | 提交id      | 描述          | 成功率统计       | 备注                 |
-| -------- | ------- | ---- |:--------:| --------- |
-|[seed=42](logs/sb3/Template-Tutorial-Direct-v0/2026-02-27_12-31-45)|[id](197678246b20214a93fdbe4b8977373f74949a13)|HXY训练测试，相机范围从0-255为0-1，成功率提升|![](image-1.png)|
-|[seed=1](logs/sb3/Template-Tutorial-Direct-v0/2026-02-27_21-35-21) [seed=2](logs/sb3/Template-Tutorial-Direct-v0/2026-02-27_23-34-36) [seed=3](logs/sb3/Template-Tutorial-Direct-v0/2026-02-28_01-33-58)|[id](ae45ecff0427c91d1f20368cde113c27249dfad5)|障碍物距离惩罚翻倍|![success_rate](image.png)|
+# 训练1
+## 种子/模型路径
+[seed=42](logs/sb3/Template-Tutorial-Direct-v0/2026-02-27_12-31-45)
+## 提交id
+[id](197678246b20214a93fdbe4b8977373f74949a13)
+## 主要修改
+HXY训练测试，相机范围从0-255为0-1，成功率提升
+## 成功率曲线
+![](image-1.png)
+
+# 训练2
+## 种子/模型路径
+[seed=1](logs/sb3/Template-Tutorial-Direct-v0/2026-02-27_21-35-21) [seed=2](logs/sb3/Template-Tutorial-Direct-v0/2026-02-27_23-34-36) [seed=3](logs/sb3/Template-Tutorial-Direct-v0/2026-02-28_01-33-58)
+## 提交id
+[id](ae45ecff0427c91d1f20368cde113c27249dfad5)
+## 主要修改
+障碍物距离惩罚翻倍!
+## 成功率曲线
+![success_rate](image.png)
 
 # 训练3
 固定场景work版本,成功率超过97%，棋盘格随机场景成功率93%,Gazebo不能完全work
@@ -43,7 +58,7 @@ obstacle_penalty = torch.clamp(4.0 * (0.8 - min_dist_to_surface), min=0.0)
 ![alt text](image-3.png)
 
 ## 更新日志2026.03.16
-- bug:
+- **bug:**
 在isaacsim5.1下,对于障碍物类刚体（不能被撞动的）`kinematic_enabled=True`会导致`write_root_pose_to_sim()`无法生效（isaacsim的gui界面无法显示、无人机的深度图中无法看到变化，但是维护的self.obstacles中信息会更新）
 - 解决方案：
 需要将障碍物的`kinematic_enabled=True`改为`kinematic_enabled=False`并将质量和阻尼设置为极大的数字`mass_props=sim_utils.MassPropertiesCfg(mass=10000.0),`、`linear_damping=1000.0, angular_damping=1000.0,`
