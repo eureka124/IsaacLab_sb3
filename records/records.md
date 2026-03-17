@@ -41,3 +41,48 @@ obstacle_penalty = torch.clamp(4.0 * (0.8 - min_dist_to_surface), min=0.0)
 网格化随机障碍物位置、无人机起点终点
 ## 成功率曲线
 ![alt text](image-3.png)
+
+## 更新日志2026.03.16
+- bug:
+在isaacsim5.1下,对于障碍物类刚体（不能被撞动的）`kinematic_enabled=True`会导致`write_root_pose_to_sim()`无法生效（isaacsim的gui界面无法显示、无人机的深度图中无法看到变化，但是维护的self.obstacles中信息会更新）
+- 解决方案：
+需要将障碍物的`kinematic_enabled=True`改为`kinematic_enabled=False`并将质量和阻尼设置为极大的数字`mass_props=sim_utils.MassPropertiesCfg(mass=10000.0),`、`linear_damping=1000.0, angular_damping=1000.0,`
+
+更改前：
+```python
+# 循环创建并添加障碍物配置到 MySceneCfg
+for i, (pos, ra, hei) in enumerate(obstacle_positions):
+    obstacle_cfg = RigidObjectCfg(
+        prim_path=f"{{ENV_REGEX_NS}}/Obstacle_{i}",
+        spawn=sim_utils.CylinderCfg(
+            radius=ra,
+            height=hei,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=pos),
+    )
+    setattr(MySceneCfg, f"Obstacle_{i}", obstacle_cfg)
+```
+更改后：
+```python
+for i, (pos, ra, hei) in enumerate(obstacle_positions):
+    obstacle_cfg = RigidObjectCfg(
+        prim_path=f"{{ENV_REGEX_NS}}/Obstacle_{i}",
+        spawn=sim_utils.CylinderCfg(
+            radius=ra,
+            height=hei,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=False,
+                disable_gravity=True,
+                linear_damping=1000.0,
+                angular_damping=1000.0,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass=10000.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=pos),
+    )
+    setattr(MySceneCfg, f"Obstacle_{i}", obstacle_cfg)
+```
