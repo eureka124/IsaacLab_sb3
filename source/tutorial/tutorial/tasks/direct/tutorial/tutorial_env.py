@@ -244,8 +244,9 @@ class TutorialEnv(DirectRLEnv):
 
         # torque = I * ang_acc.
         # 我们从 uav_params 中已知的惯性参数计算
-        inertia = torch.tensor([0.007, 0.007, 0.012], device=self.device)
-        torques_local = (ang_acc * inertia).unsqueeze(1)
+        if not hasattr(self, "uav_inertia"):
+            self.uav_inertia = torch.tensor([0.007, 0.007, 0.012], device=self.device)
+        torques_local = (ang_acc * self.uav_inertia).unsqueeze(1)
 
         self.robot.set_external_force_and_torque(
             forces_local, torques_local, body_ids=[0], is_global=False
@@ -731,6 +732,10 @@ class DepthImageBuffer:
                 device=self.device,
                 dtype=depth_norm.dtype,
             )
+            # 缓存常数张量，避免每步出现 CPU 列表到 GPU Tensor 的同步拷贝
+            self.idx_000 = torch.tensor([0, 0, 0], device=self.device)
+            self.idx_100 = torch.tensor([1, 0, 0], device=self.device)
+            self._batch_idx = torch.arange(self.num_envs, device=self.device).unsqueeze(1).expand(-1, 3)
 
         new_imgs = depth_norm.squeeze(-1)  # (num_envs, h, w)
 
@@ -768,16 +773,13 @@ class DepthImageBuffer:
 
         # 特殊情况处理
         size_1 = self.current_sizes == 1
-        indices[size_1] = torch.tensor([0, 0, 0], device=self.device)
+        indices[size_1] = self.idx_000
 
         size_2 = self.current_sizes == 2
-        indices[size_2] = torch.tensor([1, 0, 0], device=self.device)
+        indices[size_2] = self.idx_100
 
         # 收集图像
-        batch_idx = (
-            torch.arange(self.num_envs, device=self.device).unsqueeze(1).expand(-1, 3)
-        )
-        return self.buffer[batch_idx, indices]
+        return self.buffer[self._batch_idx, indices]
 
     def reset_idx(self, env_ids):
         """重置指定环境的缓冲区"""
