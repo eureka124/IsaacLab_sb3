@@ -41,3 +41,21 @@ obstacle_penalty = torch.clamp(4.0 * (0.8 - min_dist_to_surface), min=0.0)
 网格化随机障碍物位置、无人机起点终点
 ## 成功率曲线
 ![alt text](image-3.png)
+
+# 训练4
+随机场景，PPO，成功率95左右，关闭障碍物相关密集惩罚，较打开密集惩罚有所上升。
+## 种子/模型路径：
+[seed=123](logs/sb3/Template-Tutorial-Direct-v0/2026-03-20_14-46-40)
+## 提交id
+[id](a5996b9199fb3b15963114a5184b79b3c9d8250d)
+## 主要修改：
+```python
+total_reward = (
+        reward_velocity * 1.0  # 速度在目标方向的分量
+        - penalty_smooth * 0.1  # 平滑度惩罚
+        - collided * 200.0  # 碰撞惩罚
+        + arrived * 300.0  # 到达奖励
+        # - penalty_obstacle * 2  # 障碍物距离惩罚
+    )
+```
+## 成功率曲线

@@ -214,7 +214,7 @@ class TutorialEnv(DirectRLEnv):
         target_acc = torch.zeros_like(target_vel)
         state = torch.cat([pos, quat, vel, angvel], dim=-1)
 
-        # compute 返回的是归一化的电机指令 [-1, 1]
+        # compute 返回的是直接的推力和扭矩: [推力, 扭矩_x, 扭矩_y, 扭矩_z]
         cmd = self.controller.compute(
             root_state=state,
             target_pos=self.target_pos_setpoint,
@@ -223,39 +223,24 @@ class TutorialEnv(DirectRLEnv):
             target_yaw=self.target_yaw_setpoint,
         )
 
-        # 5. 从电机指令还原物理力和力矩 (用于 set_external_force_and_torque)
-        # cmd = (mixer @ [ang_acc, thrust].T).T / max_thrusts * 2 - 1
-        # 我们通过逆运算获取 thrust 和 ang_acc
-        real_cmd = (cmd + 1) / 2 * self.controller.max_thrusts
+        # 5. 直接使用控制器输出的推力和扭矩 (用于 set_external_force_and_torque)
+        thrust = cmd[:, 0]
+        torques = cmd[:, 1:4]
 
-        # ang_acc_thrust = (mixer_pinverse @ real_cmd.T).T
-        # 注意: LeePositionController 内部使用了 mixer = A.T @ (A @ A.T).inverse() @ I
-        # 所以 ang_acc_thrust = [ang_acc, thrust]
-        # 我们直接使用伪逆还原
-        ang_acc_thrust = (self.mixer_pinv @ real_cmd.unsqueeze(-1)).squeeze(-1)
-
-        ang_acc = ang_acc_thrust[:, :3]
-        thrust = ang_acc_thrust[:, 3]
-
-        # 实际上，我们可以直接应用 thrust 和 torque
-        # 为了简化，我们直接从 ang_acc 和 thrust 构造
         forces_local = torch.zeros((self.num_envs, 1, 3), device=self.device)
         forces_local[:, 0, 2] = thrust
 
-        # torque = I * ang_acc.
-        # 我们从 uav_params 中已知的惯性参数计算
-        if not hasattr(self, "uav_inertia"):
-            self.uav_inertia = torch.tensor([0.007, 0.007, 0.012], device=self.device)
-        torques_local = (ang_acc * self.uav_inertia).unsqueeze(1)
+        torques_local = torques.unsqueeze(1)
 
         self.robot.set_external_force_and_torque(
             forces_local, torques_local, body_ids=[0], is_global=False
         )
 
-        # 6. 设置螺旋桨转速 (可视化)
-        rpms = torch.sqrt(torch.clamp((cmd + 1) / 2, min=0.0)) * 838  # max_rot_vel
-        joint_vel_targets = rpms * (2 * torch.pi / 60.0)  # 单位转换
-        self.robot.write_joint_velocity_to_sim(joint_vel_targets, env_ids=None)
+        # # 6. 设置螺旋桨转速 (可视化) - 已关闭
+        # # 因为控制器不再输出每一个电机的归一化指令，所以可以用一个稳定的基础转速作为可视化
+        # base_rpm = 600.0
+        # joint_vel_targets = torch.full((self.num_envs, 4), base_rpm * (2 * torch.pi / 60.0), device=self.device)
+        # self.robot.write_joint_velocity_to_sim(joint_vel_targets, env_ids=None)
 
     # def _update_velocity_arrow(self):
     #     # 获取当前速度
@@ -331,7 +316,9 @@ class TutorialEnv(DirectRLEnv):
         robot_quat = self.robot.data.root_quat_w
         diff_global = self.target_pos - robot_pos
         diff_body = quat_rotate_inverse(robot_quat, diff_global)
-        relative_position = diff_body[:, :2]
+        relative_position = diff_body[:, :2].clamp(
+            -5.0, 5.0
+        )  # 目标位置相对于机器人的位置差 (num_envs, 2)，并裁剪到合理范围
 
         last_action = self.actions
 
@@ -735,7 +722,11 @@ class DepthImageBuffer:
             # 缓存常数张量，避免每步出现 CPU 列表到 GPU Tensor 的同步拷贝
             self.idx_000 = torch.tensor([0, 0, 0], device=self.device)
             self.idx_100 = torch.tensor([1, 0, 0], device=self.device)
-            self._batch_idx = torch.arange(self.num_envs, device=self.device).unsqueeze(1).expand(-1, 3)
+            self._batch_idx = (
+                torch.arange(self.num_envs, device=self.device)
+                .unsqueeze(1)
+                .expand(-1, 3)
+            )
 
         new_imgs = depth_norm.squeeze(-1)  # (num_envs, h, w)
 
@@ -803,7 +794,7 @@ def compute_rewards(
         - penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 200.0  # 碰撞惩罚
         + arrived * 300.0  # 到达奖励
-        - penalty_obstacle * 2  # 障碍物距离惩罚
+        # - penalty_obstacle * 2  # 障碍物距离惩罚
     )
     # print("Total Reward:", total_reward)
     # print("Reward Velocity:", reward_velocity)
