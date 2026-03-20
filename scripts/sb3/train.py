@@ -49,7 +49,7 @@ parser.add_argument(
     "--seed", type=int, default=None, help="Seed used for the environment"
 )
 parser.add_argument(
-    "--log_interval", type=int, default=1000, help="Log data every n timesteps."
+    "--log_interval", type=int, default=500000, help="Log data every n timesteps."
 )
 parser.add_argument(
     "--checkpoint_interval",
@@ -308,7 +308,7 @@ def main(
         verbose=2,
         max_keep=40,
     )
-    isaac_log_callback = IsaacLogCallback(log_freq=500)  # 每500个episode记录一次
+    isaac_log_callback = IsaacLogCallback(log_freq=500)  # 每500个 timestep 记录一次
     callbacks = [
         checkpoint_callback,
         LogEveryNTimesteps(n_steps=args_cli.log_interval),
@@ -320,7 +320,7 @@ def main(
         agent.learn(
             total_timesteps=n_timesteps,
             callback=callbacks,
-            progress_bar=False,
+            progress_bar=True,
             log_interval=None,
         )
     # save the final model
