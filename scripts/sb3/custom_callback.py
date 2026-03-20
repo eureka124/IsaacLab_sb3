@@ -82,7 +82,7 @@ class IsaacLogCallback(BaseCallback):
     rates every `log_freq` episodes.
     """
 
-    def __init__(self, log_freq: int = 100, verbose=0):
+    def __init__(self, log_freq: int = 1000, verbose=0):
         super().__init__(verbose)
         self.log_freq = log_freq
 
