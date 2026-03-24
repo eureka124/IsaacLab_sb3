@@ -6,14 +6,10 @@
 import torch
 import isaaclab.sim as sim_utils
 from isaaclab.envs import DirectRLEnv
-from isaaclab.assets import RigidObject
-from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from .tutorial_env_cfg import TutorialEnvCfg
-from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG
+from isaaclab.markers import CUBOID_MARKER_CFG
 from isaaclab.markers import VisualizationMarkers
 from omni_drones.controllers import LeePositionController
-from isaaclab.utils.math import quat_from_matrix
-from matplotlib import pyplot as plt
 import gymnasium as gym
 import numpy as np
 
@@ -214,7 +210,7 @@ class TutorialEnv(DirectRLEnv):
         target_acc = torch.zeros_like(target_vel)
         state = torch.cat([pos, quat, vel, angvel], dim=-1)
 
-        # compute 返回的是归一化的电机指令 [-1, 1]
+        # compute 返回的是直接的推力和扭矩: [推力, 扭矩_x, 扭矩_y, 扭矩_z]
         cmd = self.controller.compute(
             root_state=state,
             target_pos=self.target_pos_setpoint,
@@ -223,38 +219,24 @@ class TutorialEnv(DirectRLEnv):
             target_yaw=self.target_yaw_setpoint,
         )
 
-        # 5. 从电机指令还原物理力和力矩 (用于 set_external_force_and_torque)
-        # cmd = (mixer @ [ang_acc, thrust].T).T / max_thrusts * 2 - 1
-        # 我们通过逆运算获取 thrust 和 ang_acc
-        real_cmd = (cmd + 1) / 2 * self.controller.max_thrusts
+        # 5. 直接使用控制器输出的推力和扭矩 (用于 set_external_force_and_torque)
+        thrust = cmd[:, 0]
+        torques = cmd[:, 1:4]
 
-        # ang_acc_thrust = (mixer_pinverse @ real_cmd.T).T
-        # 注意: LeePositionController 内部使用了 mixer = A.T @ (A @ A.T).inverse() @ I
-        # 所以 ang_acc_thrust = [ang_acc, thrust]
-        # 我们直接使用伪逆还原
-        ang_acc_thrust = (self.mixer_pinv @ real_cmd.unsqueeze(-1)).squeeze(-1)
-
-        ang_acc = ang_acc_thrust[:, :3]
-        thrust = ang_acc_thrust[:, 3]
-
-        # 实际上，我们可以直接应用 thrust 和 torque
-        # 为了简化，我们直接从 ang_acc 和 thrust 构造
         forces_local = torch.zeros((self.num_envs, 1, 3), device=self.device)
         forces_local[:, 0, 2] = thrust
 
-        # torque = I * ang_acc.
-        # 我们从 uav_params 中已知的惯性参数计算
-        inertia = torch.tensor([0.007, 0.007, 0.012], device=self.device)
-        torques_local = (ang_acc * inertia).unsqueeze(1)
+        torques_local = torques.unsqueeze(1)
 
         self.robot.set_external_force_and_torque(
             forces_local, torques_local, body_ids=[0], is_global=False
         )
 
-        # 6. 设置螺旋桨转速 (可视化)
-        rpms = torch.sqrt(torch.clamp((cmd + 1) / 2, min=0.0)) * 838  # max_rot_vel
-        joint_vel_targets = rpms * (2 * torch.pi / 60.0)  # 单位转换
-        self.robot.write_joint_velocity_to_sim(joint_vel_targets, env_ids=None)
+        # # 6. 设置螺旋桨转速 (可视化) - 已关闭
+        # # 因为控制器不再输出每一个电机的归一化指令，所以可以用一个稳定的基础转速作为可视化
+        # base_rpm = 600.0
+        # joint_vel_targets = torch.full((self.num_envs, 4), base_rpm * (2 * torch.pi / 60.0), device=self.device)
+        # self.robot.write_joint_velocity_to_sim(joint_vel_targets, env_ids=None)
 
     # def _update_velocity_arrow(self):
     #     # 获取当前速度
