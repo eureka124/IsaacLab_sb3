@@ -91,19 +91,15 @@ class TutorialEnv(DirectRLEnv):
 
         # Collect obstacles from scene
         self.obstacles = []
-        self.obstacle_radii = []
-        # We assume Obstacle_0 to Obstacle_59 exist in scene as per config
-        for i in range(60):
+        # We assume Obstacle_0 to Obstacle_n exist in scene as per config
+        for i in range(100):
             name = f"Obstacle_{i}"
             # Check if it exists in the scene dictionary
             if name in self.scene.keys():
                 obs = self.scene[name]
                 self.obstacles.append(obs)
-                # Get radius from config spawn.
-                self.obstacle_radii.append(obs.cfg.spawn.radius)
-
-        if self.obstacles:
-            self.obstacle_radii = torch.tensor(self.obstacle_radii, device=self.device)
+            else:
+                break
 
     def _setup_scene(self):
         self.robot = self.scene["robot_cfg"]
@@ -115,7 +111,7 @@ class TutorialEnv(DirectRLEnv):
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[])
         # 添加环境光
-        light_cfg = sim_utils.DomeLightCfg(intensity=4000.0, color=(1.0, 1.0, 0.75))
+        light_cfg = sim_utils.DomeLightCfg(intensity=400.0, color=(1.0, 1.0, 0.75))
         light_cfg.func("/World/Light", light_cfg)
 
         # # 可动障碍物的定义 (优化后)
@@ -336,56 +332,8 @@ class TutorialEnv(DirectRLEnv):
             (relative_position, last_action, vel_xy, yaw_rate), dim=-1
         )  # shape: (num_envs, 8)
 
-        # Calculate privileged information (nearest 5 obstacles)
-        if len(self.obstacles) > 0:
-            # 1. Gather all obstacle positions: (num_envs, num_obstacles, 3)
-            all_obs_pos_w = torch.stack(
-                [obs.data.root_pos_w for obs in self.obstacles], dim=1
-            )
-            # 2. Robot position: (num_envs, 1, 3)
-            robot_pos_w = self.robot.data.root_pos_w.unsqueeze(1)
-            # 3. Relative positions in world frame
-            rel_pos_w = all_obs_pos_w - robot_pos_w
-            # 4. Filter by distance (XY plane)
-            dists = torch.norm(rel_pos_w[..., :2], dim=-1)
-            # 5. Get 5 nearest
-            k = min(5, len(self.obstacles))
-            vals, indices = torch.topk(dists, k=k, largest=False)
-
-            # 6. Gather geometric features
-            # Create batch indices for gathering
-            batch_indices = (
-                torch.arange(self.num_envs, device=self.device)
-                .unsqueeze(1)
-                .expand(-1, k)
-            )
-            # Gather relative positions: (num_envs, k, 3)
-            selected_rel_pos_w = rel_pos_w[batch_indices, indices]
-
-            # Rotate to body frame (consistent with other obs)
-            # Flatten to vector-process rotation
-            flat_rel_pos_w = selected_rel_pos_w.reshape(-1, 3)
-            flat_quats = self.robot.data.root_quat_w.repeat_interleave(k, dim=0)
-            flat_rel_pos_b = quat_rotate_inverse(flat_quats, flat_rel_pos_w)
-            selected_rel_pos_b = flat_rel_pos_b.reshape(self.num_envs, k, 3)
-
-            # Extract XY: (num_envs, k, 2)
-            feat_xy = selected_rel_pos_b[..., :2]
-
-            # Gather radii: (num_envs, k)
-            selected_radii = self.obstacle_radii[indices]
-
-            # Combine: (num_envs, k, 3) -> [x, y, r]
-            critic_obs = torch.cat([feat_xy, selected_radii.unsqueeze(-1)], dim=-1)
-            # Flatten: (num_envs, k*3)
-            critic_obs = critic_obs.reshape(self.num_envs, -1)
-
-            # Pad if less than 5
-            if k < 5:
-                padding = torch.zeros((self.num_envs, (5 - k) * 3), device=self.device)
-                critic_obs = torch.cat([critic_obs, padding], dim=-1)
-        else:
-            critic_obs = torch.zeros((self.num_envs, 15), device=self.device)
+        # Calculate privileged information - Disabled for maze
+        critic_obs = torch.zeros((self.num_envs, 15), device=self.device)
 
         observations = {
             "policy": {
@@ -426,25 +374,8 @@ class TutorialEnv(DirectRLEnv):
 
         # 计算障碍物距离惩罚
         if len(self.obstacles) > 0:
-            obstacle_pos = torch.stack(
-                [obs.data.root_pos_w[:, :2] for obs in self.obstacles], dim=0
-            )  # (num_obstacles, num_envs, 2)
-            # 计算机器人到障碍物中心的距离
-            # robot_pos: (num_envs, 2) -> unsqueeze(0) -> (1, num_envs, 2)
-            dists = torch.norm(
-                obstacle_pos - robot_pos.unsqueeze(0), dim=-1
-            )  # (num_obstacles, num_envs)
-
-            # 计算到障碍物表面的距离: 中心距离 - 障碍物半径
-            # self.obstacle_radii: (num_obstacles,) -> unsqueeze(1) -> (num_obstacles, 1)
-            dist_to_surface = dists - self.obstacle_radii.unsqueeze(1)
-
-            # 找到最近的障碍物距离 (num_envs,)
-            min_dist_to_surface, _ = torch.min(dist_to_surface, dim=0)
-
-            # 计算惩罚: 距离1m时惩罚为0, 距离0.4m时惩罚为3. 0.4m到1m之间线性变化 (P = 4 * (0.8 - d))
-            # clamp min=0 确保距离大于1m时无惩罚
-            obstacle_penalty = torch.clamp(4.0 * (0.8 - min_dist_to_surface), min=0.0)
+            # 迷宫中由于是长方形墙壁，简单的中心距离不再适用，这里简化处理或移除
+            obstacle_penalty = torch.zeros(self.num_envs, device=self.device)
         else:
             obstacle_penalty = torch.zeros(self.num_envs, device=self.device)
 
@@ -498,28 +429,13 @@ class TutorialEnv(DirectRLEnv):
         arrived = distances <= 0.4
         self.arrived = arrived
 
-        # 2. 判断是否碰撞
-        if len(self.obstacles) > 0:
-            # 机器人位置 (num_envs, 2)
-            robot_pos = self.robot.data.root_pos_w[:, :2]
-
-            # 障碍物位置 (num_obstacles, num_envs, 2)
-            obstacle_pos = torch.stack(
-                [obs.data.root_pos_w[:, :2] for obs in self.obstacles], dim=0
-            )
-
-            # 计算距离 (num_obstacles, num_envs)
-            dists = torch.norm(obstacle_pos - robot_pos.unsqueeze(0), dim=-1)
-
-            # 碰撞阈值 = 障碍物半径 + 机器人半径(安全距离)
-            robot_radius = 0.4  # 假设机器人半径为0.4米
-            thresholds = self.obstacle_radii.unsqueeze(1) + robot_radius
-
-            # 判断是否发生碰撞
-            collided = (dists < thresholds).any(dim=0)
-        else:
-            collided = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        # 2. 判断是否碰撞 (使用 contact 传感器检测碰撞)
+        # 获取接触力传感器数据
+        contact_forces = self.scene["contact_forces"].data.net_forces_w
+        # 如果任一环境中的最大接触力超过阈值 (5.0 N)，则认为发生碰撞
+        collided = (torch.norm(contact_forces, dim=-1) > 5.0).any(dim=1)
         self.collided = collided
+
         # 3. 统计信息 (确保在 __init__ 中初始化了这些变量)
         num_resets = (
             time_out.sum().item() + collided.sum().item() + arrived.sum().item()
@@ -568,86 +484,53 @@ class TutorialEnv(DirectRLEnv):
 
         len_env_ids = len(env_ids)
 
-        # Grid Logic
-        rand_vals = torch.rand((len_env_ids, 100), device=self.device)
-        perm = torch.argsort(rand_vals, dim=1)  # (len_env_ids, 100)
+        # # Grid Logic
+        # rand_vals = torch.rand((len_env_ids, 100), device=self.device)
+        # perm = torch.argsort(rand_vals, dim=1)  # (len_env_ids, 100)
 
-        obs_grid_indices = perm[:, :60]  # (len_env_ids, 60)
-        start_grid_indices = perm[:, 60]  # (len_env_ids,)
-        goal_grid_indices = perm[:, 61]  # (len_env_ids,)
+        # obs_grid_indices = perm[:, :60]  # (len_env_ids, 60)
+        # start_grid_indices = perm[:, 60]  # (len_env_ids,)
+        # goal_grid_indices = perm[:, 61]  # (len_env_ids,)
 
-        def get_grid_coords_batch(indices):
-            row = indices // self.grid_size
-            col = indices % self.grid_size
-            # -4.5 to 4.5
-            x_center = (row - (self.grid_size / 2 - 0.5)) * self.cell_size
-            y_center = (col - (self.grid_size / 2 - 0.5)) * self.cell_size
-            return x_center, y_center
+        # def get_grid_coords_batch(indices):
+        #     row = indices // self.grid_size
+        #     col = indices % self.grid_size
+        #     # -4.5 to 4.5
+        #     x_center = (row - (self.grid_size / 2 - 0.5)) * self.cell_size
+        #     y_center = (col - (self.grid_size / 2 - 0.5)) * self.cell_size
+        #     return x_center, y_center
 
-        # Place Obstacles
-        if len(self.obstacles) > 0:
-            for k in range(len(self.obstacles)):
-                if k >= 60:
-                    break
+        # # Place Obstacles (Maze Fixed)
+        # if len(self.obstacles) > 0:
+        #     # 迷宫障碍物在 Scene 中已经固定位置，这里不需要再通过 get_grid_coords_batch 随机放置
+        #     # 直接确保它们在默认位置即可 (或者在 config 中已经设置好)
+        #     for k in range(len(self.obstacles)):
+        #         obs_defaults = (
+        #             self.obstacles[k].data.default_root_state[env_ids].clone()
+        #         )
+        #         # 已经是全局/环境相对坐标，不需要额外处理
+        #         self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
+        #         self.obstacles[k].write_root_velocity_to_sim(
+        #             obs_defaults[:, 7:], env_ids
+        #         )
 
-                grid_idx = obs_grid_indices[:, k]
-                cx, cy = get_grid_coords_batch(grid_idx)
-                r = self.obstacle_radii[k]
+        # Place Robot (Start) - 随机在迷宫中找一个位置
+        # 这里为了演示，固定在 (-10.5, -10.5)，确保不与障碍物冲突
+        start_x = torch.full((len_env_ids,), -10.5, device=self.device)
+        start_y = torch.full((len_env_ids,), -10.5, device=self.device)
 
-                max_offset = (self.cell_size / 2.0) - r
-                max_offset = torch.clamp(max_offset, min=0.0)
-
-                offset_x = (
-                    torch.rand(len_env_ids, device=self.device) * 2 - 1
-                ) * max_offset
-                offset_y = (
-                    torch.rand(len_env_ids, device=self.device) * 2 - 1
-                ) * max_offset
-
-                obs_x = cx + offset_x
-                obs_y = cy + offset_y
-
-                obs_defaults = (
-                    self.obstacles[k].data.default_root_state[env_ids].clone()
-                )
-                obs_defaults[:, 0] = obs_x + self.scene.env_origins[env_ids, 0]
-                obs_defaults[:, 1] = obs_y + self.scene.env_origins[env_ids, 1]
-
-                self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
-                self.obstacles[k].write_root_velocity_to_sim(
-                    obs_defaults[:, 7:], env_ids
-                )
-
-        # Place Robot (Start)
-        # 边界裕量 0.5 > 碰撞半径 0.4，保证与相邻格障碍物的安全距离
-        # 相邻格最小中心距 = cell_size - (cell_size/2-0.5) - (cell_size/2-r) = 0.5+r > r+0.4 ✓
-        cx_s, cy_s = get_grid_coords_batch(start_grid_indices)
-        offset_x_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.5
-        )
-        offset_y_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.5
-        )
-        start_x = cx_s + offset_x_s
-        start_y = cy_s + offset_y_s
-
-        # Overwrite Robot X, Y
+        # Overwrite Robot X, Y, Z
         default_root_state[:, 0] = start_x + self.scene.env_origins[env_ids, 0]
         default_root_state[:, 1] = start_y + self.scene.env_origins[env_ids, 1]
+        default_root_state[:, 2] = 2.0 + self.scene.env_origins[env_ids, 2]
 
         # 设置机器人速度
         self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
 
-        # Place Target (Goal)
-        cx_g, cy_g = get_grid_coords_batch(goal_grid_indices)
-        offset_x_g = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.2
-        )
-        offset_y_g = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.2
-        )
-        target_x = cx_g + offset_x_g
-        target_y = cy_g + offset_y_g
+        # Place Target (Goal) - 随机在迷宫中找一个位置
+        # 这里为了演示，固定在 (10, 10)
+        target_x = torch.full((len_env_ids,), 10.0, device=self.device)
+        target_y = torch.full((len_env_ids,), 10.0, device=self.device)
         target_z = torch.ones_like(target_x) * 2.0
 
         xyz = torch.stack((target_x, target_y, target_z), dim=-1)
@@ -790,8 +673,8 @@ def compute_rewards(
     penalty_obstacle: torch.Tensor,
 ):
     total_reward = (
-        reward_velocity * 1.0  # 速度在目标方向的分量
-        - penalty_smooth * 0.1  # 平滑度惩罚
+        # reward_velocity * 1.0  # 速度在目标方向的分量
+        -penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 200.0  # 碰撞惩罚
         + arrived * 300.0  # 到达奖励
         # - penalty_obstacle * 2  # 障碍物距离惩罚
