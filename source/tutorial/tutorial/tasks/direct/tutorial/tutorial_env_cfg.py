@@ -10,11 +10,12 @@ from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 from tutorial.assets.hummingbird import HUMMINGBIRD_CFG
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
+from isaaclab.sensors import ContactSensorCfg
 import numpy as np
 from gymnasium import spaces
 
 _robot_spawn_cfg = HUMMINGBIRD_CFG.spawn.copy()
-_robot_spawn_cfg.activate_contact_sensors = False
+_robot_spawn_cfg.activate_contact_sensors = True
 
 
 @configclass
@@ -57,13 +58,59 @@ class MySceneCfg(InteractiveSceneCfg):
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -0.04)),
     )
 
-    # 接触传感器
-    # contact_forces: ContactSensorCfg = ContactSensorCfg(
-    #     prim_path="{ENV_REGEX_NS}/Robot/.*",
-    #     update_period=0.0,
-    #     history_length=6,
-    #     debug_vis=True,
-    # )
+    # 接触传感器 (监听机身和旋翼的接触力)
+    contact_forces = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/(base_link|rotor_0|rotor_1|rotor_2|rotor_3)",
+        update_period=1 / 120,
+        history_length=6,
+        debug_vis=True,
+    )
+    # 添加地板
+    floor = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/Floor",
+        spawn=sim_utils.CuboidCfg(
+            size=(25.0, 25.0, 0.1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=False,
+                disable_gravity=True,
+                linear_damping=1000.0,
+                angular_damping=1000.0,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass=10000.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -0.04)),
+    )
+
+
+# 定义迷宫障碍物
+# 这里仅作为一个示例迷宫布局，你可以根据需要调整位置
+maze_obstacles = [
+    # ((x, y, z), (sx, sy, sz))
+    ((0.0, 0.0, 2.0), (15.0, 0.5, 4.0)),  # 中心横向墙
+    ((-5.0, 2.5, 2.0), (0.5, 5.0, 4.0)),  # 右侧纵向墙
+    ((5.0, 2.5, 2.0), (0.5, 5.0, 4.0)),  # 左侧纵向墙
+    # ((0.0, 8.0, 2.0), (8.0, 0.5, 4.0)),  # 北部横向墙
+    # ((0.0, -8.0, 2.0), (8.0, 0.5, 4.0)),  # 南部横向墙
+]
+
+for i, (pos, size) in enumerate(maze_obstacles):
+    obstacle_cfg = RigidObjectCfg(
+        prim_path=f"{{ENV_REGEX_NS}}/maze_Obstacle_{i}",
+        spawn=sim_utils.CuboidCfg(
+            size=size,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=False,
+                disable_gravity=True,
+                linear_damping=1000.0,
+                angular_damping=1000.0,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass=10000.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=pos),
+    )
+    setattr(MySceneCfg, f"maze_Obstacle_{i}", obstacle_cfg)
 
 
 # 定义多个静止障碍物的位置

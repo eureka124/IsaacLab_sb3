@@ -498,27 +498,13 @@ class TutorialEnv(DirectRLEnv):
         arrived = distances <= 0.4
         self.arrived = arrived
 
-        # 2. 判断是否碰撞
-        if len(self.obstacles) > 0:
-            # 机器人位置 (num_envs, 2)
-            robot_pos = self.robot.data.root_pos_w[:, :2]
-
-            # 障碍物位置 (num_obstacles, num_envs, 2)
-            obstacle_pos = torch.stack(
-                [obs.data.root_pos_w[:, :2] for obs in self.obstacles], dim=0
-            )
-
-            # 计算距离 (num_obstacles, num_envs)
-            dists = torch.norm(obstacle_pos - robot_pos.unsqueeze(0), dim=-1)
-
-            # 碰撞阈值 = 障碍物半径 + 机器人半径(安全距离)
-            robot_radius = 0.4  # 假设机器人半径为0.4米
-            thresholds = self.obstacle_radii.unsqueeze(1) + robot_radius
-
-            # 判断是否发生碰撞
-            collided = (dists < thresholds).any(dim=0)
-        else:
-            collided = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        # 2. 判断是否碰撞 (使用接触力传感器)
+        # 获取接触力，传感器名称在 SceneCfg 中定义为 "contact_forces"
+        # data.net_forces_w shape: (num_envs, num_bodies, 3)
+        contact_forces = self.scene["contact_forces"].data.net_forces_w
+        # 计算接触力的模长，如果大于某个阈值 (例如 1.0N) 则认为发生碰撞
+        # 排除与地面的正常接触 (如果在起飞前有接触，或者这里只关注大于一定阈值的力)
+        collided = torch.any(torch.norm(contact_forces, dim=-1) > 1.0, dim=1)
         self.collided = collided
         # 3. 统计信息 (确保在 __init__ 中初始化了这些变量)
         num_resets = (
@@ -561,12 +547,26 @@ class TutorialEnv(DirectRLEnv):
             env_ids = self.robot._ALL_INDICES
         super()._reset_idx(env_ids)
 
+        # 根据配置选择随机重置或固定重置
+        if self.cfg.random_reset:
+            self._randomize_grid_positions(env_ids)
+        else:
+            self._fixed_reset_positions(env_ids)
+
+        # create markers if necessary for the first time
+        # set their visibility to true
+        self.goal_pos_visualizer.set_visibility(True)
+        self.goal_pos_visualizer.visualize(self.target_pos)
+
+        # 重置图像缓冲区
+        self.img_buffer.reset_idx(env_ids)
+
+    def _randomize_grid_positions(self, env_ids):
+        """将机器人、目标和障碍物随机分配到网格位置。"""
+        len_env_ids = len(env_ids)
         default_root_state = self.robot.data.default_root_state[env_ids].clone()
-        # print("Resetting envs:", env_ids)
         # 将重置的环境位置偏移到对应环境的原点位置
         default_root_state[:, :3] += self.scene.env_origins[env_ids]
-
-        len_env_ids = len(env_ids)
 
         # Grid Logic
         rand_vals = torch.rand((len_env_ids, 100), device=self.device)
@@ -619,8 +619,6 @@ class TutorialEnv(DirectRLEnv):
                 )
 
         # Place Robot (Start)
-        # 边界裕量 0.5 > 碰撞半径 0.4，保证与相邻格障碍物的安全距离
-        # 相邻格最小中心距 = cell_size - (cell_size/2-0.5) - (cell_size/2-r) = 0.5+r > r+0.4 ✓
         cx_s, cy_s = get_grid_coords_batch(start_grid_indices)
         offset_x_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
             self.cell_size / 2 - 0.5
@@ -656,12 +654,10 @@ class TutorialEnv(DirectRLEnv):
         # 获取目标点相对机器人位置的yaw角度
         target_yaw = get_target_direction(
             self.target_pos[env_ids, :2], default_root_state[:, :2]
-        )  # shape: (num_reset_envs,)
-        # 将yaw角度转换为四元数
-        target_quat = yaw_to_quaternion(target_yaw)  # shape: (num_reset_envs, 4)
-        # print("Target yaw angles for reset envs:", target_yaw)
+        )
+        target_quat = yaw_to_quaternion(target_yaw)
 
-        # 确保四元数归一化（双重保险）
+        # 确保四元数归一化
         quat_norm = torch.norm(target_quat, dim=-1, keepdim=True)
         target_quat = target_quat / (quat_norm + 1e-8)
 
@@ -671,17 +667,82 @@ class TutorialEnv(DirectRLEnv):
         # 设置机器人位置
         self.robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
 
-        # create markers if necessary for the first time
-        # set their visibility to true
-        self.goal_pos_visualizer.set_visibility(True)
-        self.goal_pos_visualizer.visualize(self.target_pos)
-
-        # 重置图像缓冲区
-        self.img_buffer.reset_idx(env_ids)
-
         # 初始化控制器的目标点为当前重置后的位置和朝向
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         # 从归一化后的四元数提取 yaw
+        w, x, y, z = torch.unbind(target_quat, dim=-1)
+        self.target_yaw_setpoint[env_ids] = torch.atan2(
+            2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)
+        ).unsqueeze(-1)
+
+    def _fixed_reset_positions(self, env_ids):
+        """保持障碍物在原始位置，无人机位于原点，目标点在边界随机采样。"""
+        len_env_ids = len(env_ids)
+        default_root_state = self.robot.data.default_root_state[env_ids].clone()
+        # 将重置的环境位置偏移到对应环境的原点位置
+        default_root_state[:, :3] += self.scene.env_origins[env_ids]
+
+        # 1. 障碍物保持在 config 定义的初始位置 (default_root_state)
+        if len(self.obstacles) > 0:
+            for k in range(len(self.obstacles)):
+                obs_defaults = (
+                    self.obstacles[k].data.default_root_state[env_ids].clone()
+                )
+                obs_defaults[:, :3] += self.scene.env_origins[env_ids]
+                self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
+                self.obstacles[k].write_root_velocity_to_sim(
+                    obs_defaults[:, 7:], env_ids
+                )
+
+        # 2. 无人机位于各环境原点 (0, 0, 2)
+        default_root_state[:, 0:2] = self.scene.env_origins[env_ids, 0:2]
+        default_root_state[:, 2] = 2.0
+        self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
+
+        # 3. 目标点在环境边界上（25x25范围，即 [-12.5, 12.5]）随机采样
+        # 边界范围
+        limit = 11.5  # 略小于 12.5 以防墙体遮挡
+
+        # 随机选择四条边中的一条
+        side = torch.randint(0, 4, (len_env_ids,), device=self.device)
+        pos_on_side = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * limit
+
+        target_x = torch.zeros(len_env_ids, device=self.device)
+        target_y = torch.zeros(len_env_ids, device=self.device)
+
+        # Side 0: North (y = limit), Side 1: South (y = -limit), Side 2: East (x = limit), Side 3: West (x = -limit)
+        mask0 = side == 0
+        target_x[mask0] = pos_on_side[mask0]
+        target_y[mask0] = limit
+
+        mask1 = side == 1
+        target_x[mask1] = pos_on_side[mask1]
+        target_y[mask1] = -limit
+
+        mask2 = side == 2
+        target_x[mask2] = limit
+        target_y[mask2] = pos_on_side[mask2]
+
+        mask3 = side == 3
+        target_x[mask3] = -limit
+        target_y[mask3] = pos_on_side[mask3]
+
+        target_z = torch.ones_like(target_x) * 2.0
+        xyz = torch.stack((target_x, target_y, target_z), dim=-1)
+        self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
+
+        # 4. 设置机器人朝向目标点
+        target_yaw = get_target_direction(
+            self.target_pos[env_ids, :2], default_root_state[:, :2]
+        )
+        target_quat = yaw_to_quaternion(target_yaw)
+        default_root_state[:, 3:7] = target_quat
+
+        # 设置机器人位置
+        self.robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
+
+        # 5. 初始化控制器状态
+        self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         w, x, y, z = torch.unbind(target_quat, dim=-1)
         self.target_yaw_setpoint[env_ids] = torch.atan2(
             2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)
