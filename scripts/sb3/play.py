@@ -25,9 +25,6 @@ sys.path.append(
         "../../source/tutorial/tutorial/tasks/direct/tutorial/agents",
     )
 )
-import tutorial  # noqa: F401
-
-from custom_extractor import CustomCombinedExtractor, GodViewExtractor  # noqa: F401
 from isaaclab.app import AppLauncher
 
 # add argparse arguments
@@ -101,8 +98,12 @@ sys.argv = [sys.argv[0]] + hydra_args
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
+simulation_app.update()
 
 """Rest everything follows."""
+
+import tutorial  # noqa: F401
+from custom_extractor import CustomCombinedExtractor, GodViewExtractor  # noqa: F401
 
 import gymnasium as gym
 import os
@@ -155,9 +156,7 @@ def main(
     # set the environment seed
     # note: certain randomizations occur in the environment initialization so we set the seed here
     env_cfg.seed = agent_cfg["seed"]
-    env_cfg.sim.device = (
-        args_cli.device if args_cli.device is not None else env_cfg.sim.device
-    )
+    env_cfg.sim.device = args_cli.device if args_cli.device is not None else "cpu"
 
     # directory for logging into
     log_root_path = os.path.join("logs", "sb3", train_task_name)
@@ -187,6 +186,7 @@ def main(
     env_cfg.log_dir = log_dir
 
     # create isaac environment
+    simulation_app.update()
     env = gym.make(
         args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None
     )
