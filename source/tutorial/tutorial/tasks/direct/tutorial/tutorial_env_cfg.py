@@ -43,7 +43,7 @@ class MySceneCfg(InteractiveSceneCfg):
     )
     # 接触传感器
     contact_forces = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/base_link",
+        prim_path="{ENV_REGEX_NS}/Robot/base_link|rotor_0|rotor_1|rotor_2|rotor_3",
         update_period=1 / 120,
         history_length=6,
         debug_vis=True,
@@ -135,8 +135,8 @@ maze_obstacles = [
     ((0.0, 0.0, 2.0), (10.0, 0.5, 4.0)),  # 中心横向墙
     ((5.0, 5.0, 2.0), (0.5, 10.0, 4.0)),  # 右侧纵向墙
     ((-5.0, -5.0, 2.0), (0.5, 10.0, 4.0)),  # 左侧纵向墙
-    ((0.0, 8.0, 2.0), (8.0, 0.5, 4.0)),  # 北部横向墙
-    ((0.0, -8.0, 2.0), (8.0, 0.5, 4.0)),  # 南部横向墙
+    ((0.0, 8.0, 2.0), (10.0, 0.5, 4.0)),  # 北部横向墙
+    ((0.0, -8.0, 2.0), (10.0, 0.5, 4.0)),  # 南部横向墙
 ]
 
 for i, (pos, size) in enumerate(maze_obstacles):

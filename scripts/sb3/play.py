@@ -25,9 +25,7 @@ sys.path.append(
         "../../source/tutorial/tutorial/tasks/direct/tutorial/agents",
     )
 )
-import tutorial  # noqa: F401
 
-from custom_extractor import CustomCombinedExtractor, GodViewExtractor  # noqa: F401
 from isaaclab.app import AppLauncher
 
 # add argparse arguments
@@ -103,6 +101,9 @@ app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
 """Rest everything follows."""
+
+import tutorial  # noqa: F401
+from custom_extractor import CustomCombinedExtractor, GodViewExtractor  # noqa: F401
 
 import gymnasium as gym
 import os

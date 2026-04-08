@@ -84,6 +84,12 @@ class TutorialEnv(DirectRLEnv):
         )
         self.total_episodes = 0
 
+        # 任务奖励参数与状态
+        self.initial_task_pos = torch.zeros((self.num_envs, 3), device=self.device)
+        self.last_task_reward_pos = torch.full(
+            (self.num_envs, 3), float("nan"), device=self.device
+        )
+
         # Grid management
         self.env_spacing = self.cfg.scene.env_spacing
         self.grid_size = 10
@@ -111,7 +117,7 @@ class TutorialEnv(DirectRLEnv):
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[])
         # 添加环境光
-        light_cfg = sim_utils.DomeLightCfg(intensity=400.0, color=(1.0, 1.0, 0.75))
+        light_cfg = sim_utils.DomeLightCfg(intensity=4000.0, color=(1.0, 1.0, 0.75))
         light_cfg.func("/World/Light", light_cfg)
 
         # # 可动障碍物的定义 (优化后)
@@ -383,12 +389,39 @@ class TutorialEnv(DirectRLEnv):
         # print("Reward Velocity:", reward_velocity)
         # print("Collided:", self.collided)
         # print("Arrived:", self.arrived)
+        # 任务奖励触发逻辑：
+        # 1) 距离 episode 结束前 2 秒内：每帧触发（密集奖励）
+        # 2) 其它时间：按概率触发
+        current_pos = self.robot.data.root_pos_w
+        decision_dt = self.cfg.sim.dt * getattr(self.cfg, "decimation", 1)
+        dense_window_steps = max(1, int(2.0 / decision_dt))
+        dense_reward_mask = self.episode_length_buf >= (
+            self.max_episode_length - dense_window_steps
+        )
+        prob_trigger_mask = torch.rand(self.num_envs, device=self.device) < 0.1
+        trigger_mask = dense_reward_mask | prob_trigger_mask
+
+        task_reward = torch.zeros(self.num_envs, device=self.device)
+        if trigger_mask.any():
+            current_pos_xy = current_pos[:, :2]
+            target_pos_xy = self.target_pos[:, :2]
+            manhattan_dist = torch.sum(
+                torch.abs(current_pos_xy - target_pos_xy), dim=-1
+            )
+            task_reward_value = 1.0 / (1.0 + manhattan_dist / 2.5)
+            task_reward = task_reward_value * trigger_mask.float()
+            # 更新触发位置
+            self.last_task_reward_pos[trigger_mask] = current_pos[trigger_mask]
+
+        time_out = self.episode_length_buf >= self.max_episode_length - 1
         total_reward = compute_rewards(
             reward_velocity,
             self.collided,
             penalty_smooth,
             self.arrived,
             obstacle_penalty,
+            task_reward,
+            time_out,
         )  # print(self.robot.data)
 
         # 检查 total_reward 是否包含 NaN 值，如果有则中断程序
@@ -562,6 +595,10 @@ class TutorialEnv(DirectRLEnv):
         # 重置图像缓冲区
         self.img_buffer.reset_idx(env_ids)
 
+        # 重置任务奖励触发状态
+        self.initial_task_pos[env_ids] = default_root_state[:, :3]
+        self.last_task_reward_pos[env_ids] = float("nan")
+
         # 初始化控制器的目标点为当前重置后的位置和朝向
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         # 从归一化后的四元数提取 yaw
@@ -671,12 +708,16 @@ def compute_rewards(
     penalty_smooth: torch.Tensor,
     arrived: torch.Tensor,
     penalty_obstacle: torch.Tensor,
+    task_reward: torch.Tensor,
+    time_out: torch.Tensor,
 ):
     total_reward = (
         # reward_velocity * 1.0  # 速度在目标方向的分量
         -penalty_smooth * 0.1  # 平滑度惩罚
         - collided * 200.0  # 碰撞惩罚
         + arrived * 300.0  # 到达奖励
+        + task_reward * 1.0  # 任务奖励
+        # - time_out * 20.0  # 超时惩罚
         # - penalty_obstacle * 2  # 障碍物距离惩罚
     )
     # print("Total Reward:", total_reward)
@@ -729,6 +770,7 @@ def get_target_direction(target_pos, robot_pos) -> torch.Tensor:
     return yaw  # shape: (num_reset_envs,)
 
 
+# 四元数旋转向量的逆操作：将世界坐标系下的向量 v 旋转到机体坐标系下
 @torch.jit.script
 def quat_rotate_inverse(q: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
     q_w = q[:, 0]

@@ -123,18 +123,15 @@ signal.signal(signal.SIGINT, cleanup_pbar)
 import gymnasium as gym
 import logging
 import numpy as np
-import os
 import random
 import time
 from datetime import datetime
-
+import os
 from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.callbacks import CheckpointCallback, LogEveryNTimesteps
 from stable_baselines3.common.vec_env import VecNormalize
 
 # Isomorphic import to avoid circular dependency issues if any
-import sys
-import os
 
 # Add the source directory to sys.path to allow importing the tutorial package
 sys.path.append(
@@ -310,7 +307,7 @@ def main(
         verbose=2,
         max_keep=20,
     )
-    isaac_log_callback = IsaacLogCallback(log_freq=500)  # 每500个episode记录一次
+    isaac_log_callback = IsaacLogCallback(log_freq=5000)  # 每5000个episode记录一次
     callbacks = [
         checkpoint_callback,
         LogEveryNTimesteps(n_steps=args_cli.log_interval),
