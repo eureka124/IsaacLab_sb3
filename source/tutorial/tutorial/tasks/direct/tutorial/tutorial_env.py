@@ -517,13 +517,13 @@ class TutorialEnv(DirectRLEnv):
 
         current_sum = sum(self.success_rate_count)
         # 每 100 次事件打印一次
-        if current_sum > 0 and current_sum % 100 == 0:
+        if current_sum > 0 and current_sum % 1000 == 0:
             if not self.last_condition_state:  # 防止同一步重复打印
                 success_rates = (
                     self.success_rate_count / self.success_rate_count.sum().item() * 100
                 )
                 print(
-                    f"Stats [Timeout, Collision, Arrived]: [{success_rates[0]:.2f}%, {success_rates[1]:.2f}%, {success_rates[2]:.2f}%]"
+                    f"Stats [Timeout, Collision, Arrived]: [{success_rates[0]:.2f}%, {success_rates[1]:.2f}%, {success_rates[2]:.2f}%, total episodes: {self.success_rate_count.sum().item()}]"
                 )
                 self.last_condition_state = True
                 self.success_rate_count[:] = 0
