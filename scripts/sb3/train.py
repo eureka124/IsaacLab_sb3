@@ -39,6 +39,7 @@ parser.add_argument(
     "--num_envs", type=int, default=None, help="Number of environments to simulate."
 )
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
+parser.add_argument("--name", type=str, default=None, help="Name of the training run.")
 parser.add_argument(
     "--agent",
     type=str,
@@ -209,7 +210,9 @@ def main(
 
     # directory for logging into
     run_info = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_root_path = os.path.abspath(os.path.join("logs", "sb3", args_cli.task))
+    log_root_path = os.path.abspath(
+        os.path.join("logs", "sb3", args_cli.name if args_cli.name else "default")
+    )
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
     # The Ray Tune workflow extracts experiment name using the logging line below, hence, do not change it (see PR #2346, comment-2819298849)
     print(f"Exact experiment name requested from command line: {run_info}")
