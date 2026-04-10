@@ -39,6 +39,7 @@ parser.add_argument(
     "--num_envs", type=int, default=None, help="Number of environments to simulate."
 )
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
+parser.add_argument("--name", type=str, default=None, help="Name of the experiment.")
 parser.add_argument(
     "--agent",
     type=str,
@@ -49,7 +50,7 @@ parser.add_argument(
     "--seed", type=int, default=None, help="Seed used for the environment"
 )
 parser.add_argument(
-    "--log_interval", type=int, default=500000, help="Log data every n timesteps."
+    "--log_interval", type=int, default=50000, help="Log data every n timesteps."
 )
 parser.add_argument(
     "--checkpoint_interval",
@@ -129,6 +130,7 @@ import time
 from datetime import datetime
 
 from sb3_contrib import RecurrentPPO
+from stable_baselines3.ppo import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, LogEveryNTimesteps
 from stable_baselines3.common.vec_env import VecNormalize
 
@@ -209,7 +211,9 @@ def main(
 
     # directory for logging into
     run_info = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_root_path = os.path.abspath(os.path.join("logs", "sb3", args_cli.task))
+    log_root_path = os.path.abspath(
+        os.path.join("logs", "sb3", args_cli.name if args_cli.name else "default")
+    )
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
     # The Ray Tune workflow extracts experiment name using the logging line below, hence, do not change it (see PR #2346, comment-2819298849)
     print(f"Exact experiment name requested from command line: {run_info}")
@@ -296,7 +300,7 @@ def main(
         policy_kwargs["features_extractor_class"] = CustomCombinedExtractor
     agent_cfg["policy_kwargs"] = policy_kwargs
 
-    agent = RecurrentPPO(
+    agent = PPO(
         policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg
     )
     if args_cli.checkpoint is not None:
@@ -310,7 +314,7 @@ def main(
         verbose=2,
         max_keep=20,
     )
-    isaac_log_callback = IsaacLogCallback(log_freq=500)  # 每500个episode记录一次
+    isaac_log_callback = IsaacLogCallback(log_freq=100)  # 每100个episode记录一次
     callbacks = [
         checkpoint_callback,
         LogEveryNTimesteps(n_steps=args_cli.log_interval),
@@ -322,7 +326,7 @@ def main(
         agent.learn(
             total_timesteps=n_timesteps,
             callback=callbacks,
-            progress_bar=True,
+            progress_bar=False,
             log_interval=None,
         )
     # save the final model
