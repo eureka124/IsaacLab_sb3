@@ -51,7 +51,7 @@ class TutorialEnv(DirectRLEnv):
         # arrow_cfg.prim_path = "/Visuals/Command/velocity_arrow"
         # self.vel_arrow_visualizer = VisualizationMarkers(arrow_cfg)
 
-        self.img_buffer = DepthImageBuffer(self.cfg.scene.num_envs, self.device)
+        # self.img_buffer = DepthImageBuffer(self.cfg.scene.num_envs, self.device)
 
         # 初始化 LeePositionController
         uav_params = {
@@ -302,8 +302,9 @@ class TutorialEnv(DirectRLEnv):
         return depth_frame  # shape:[env_num, 1, 12, 16]
 
     def _get_observations(self) -> dict:
-        depth_norm = self._get_norm_depth_image()
-        camera_observation = self.img_buffer.update_buffer(depth_norm)
+        # depth_norm = self._get_norm_depth_image()
+        camera_observation = self._get_norm_depth_image()
+        # camera_observation = self.img_buffer.update_buffer(depth_norm)
         # print(camera_observation)
 
         # robot_pos = self.robot.data.root_state_w[:, :2]  # 位置(x,y)
@@ -559,7 +560,7 @@ class TutorialEnv(DirectRLEnv):
         self.goal_pos_visualizer.visualize(self.target_pos)
 
         # 重置图像缓冲区
-        self.img_buffer.reset_idx(env_ids)
+        # self.img_buffer.reset_idx(env_ids)
 
     def _randomize_grid_positions(self, env_ids):
         """将机器人、目标和障碍物随机分配到网格位置。"""
