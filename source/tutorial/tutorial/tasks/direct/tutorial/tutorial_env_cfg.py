@@ -216,7 +216,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     # - spaces definition
     # observation_space = 4
     observation_space = {
-        "camera": spaces.Box(low=-1, high=1, shape=(3, 12, 16), dtype=np.float32),
+        "camera": spaces.Box(low=-1, high=1, shape=(1, 12, 16), dtype=np.float32),
         "robot-state": 8,
         "critic-state": 15,
     }

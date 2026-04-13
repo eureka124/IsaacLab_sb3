@@ -51,7 +51,7 @@ class TutorialEnv(DirectRLEnv):
         # arrow_cfg.prim_path = "/Visuals/Command/velocity_arrow"
         # self.vel_arrow_visualizer = VisualizationMarkers(arrow_cfg)
 
-        self.img_buffer = DepthImageBuffer(self.cfg.scene.num_envs, self.device)
+        # self.img_buffer = DepthImageBuffer(self.cfg.scene.num_envs, self.device)
 
         # 初始化 LeePositionController
         uav_params = {
@@ -278,11 +278,12 @@ class TutorialEnv(DirectRLEnv):
     #     self.vel_arrow_visualizer.visualize(pos, quat, scales=scales)
 
     def _get_norm_depth_image(self) -> torch.Tensor:
-        depth_frame = (
-            self.scene["camera"].data.output["distance_to_image_plane"].clone()
-        ).squeeze(
-            -1
-        )  # shape: [env_num, 1, 48, 64]
+        # 获取原始深度图 [num_envs, H, W, 1]
+        depth_raw = self.scene["camera"].data.output["distance_to_image_plane"]
+        
+        # 调整维度为 [num_envs, 1, H, W] 以进行 pool2d 操作
+        depth_frame = depth_raw.permute(0, 3, 1, 2).clone()
+
         # 最小池化降采样 (kernel_size=4, stride=4) 从 (48, 64) 到 (12, 16)
         depth_frame = -torch.nn.functional.max_pool2d(
             -depth_frame, kernel_size=4, stride=4
@@ -298,12 +299,13 @@ class TutorialEnv(DirectRLEnv):
         )
         depth_frame = torch.clamp(depth_frame, min=0.0, max=max_vals)
         depth_frame = depth_frame / max_vals  # 归一化到 [0, 1]
-        # print(depth_norm.shape) # (env_num, 1, 12, 16)
+        
         return depth_frame  # shape:[env_num, 1, 12, 16]
 
     def _get_observations(self) -> dict:
-        depth_norm = self._get_norm_depth_image()
-        camera_observation = self.img_buffer.update_buffer(depth_norm)
+        # depth_norm = self._get_norm_depth_image()
+        camera_observation = self._get_norm_depth_image()
+        # camera_observation = self.img_buffer.update_buffer(depth_norm)
         # print(camera_observation)
 
         # robot_pos = self.robot.data.root_state_w[:, :2]  # 位置(x,y)
@@ -559,7 +561,7 @@ class TutorialEnv(DirectRLEnv):
         self.goal_pos_visualizer.visualize(self.target_pos)
 
         # 重置图像缓冲区
-        self.img_buffer.reset_idx(env_ids)
+        # self.img_buffer.reset_idx(env_ids)
 
     def _randomize_grid_positions(self, env_ids):
         """将机器人、目标和障碍物随机分配到网格位置。"""

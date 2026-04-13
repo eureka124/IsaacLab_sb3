@@ -57,14 +57,23 @@ class CustomCombinedExtractor(BaseFeaturesExtractor):
 
     def forward(self, observations) -> torch.Tensor:
         # 1. Process Camera
-        img_features = self.cnn(observations["camera"])
+        # Ensure observation is correctly typed and shaped for CNN (B, C, H, W)
+        obs_camera = observations["camera"]
+        if obs_camera.dim() == 3:  # (C, H, W)
+            obs_camera = obs_camera.unsqueeze(0)
+
+        img_features = self.cnn(obs_camera)
         img_features = self.camera_fc(img_features)
 
         # 2. Process Robot State
-        state_features = self.robot_state_mlp(observations["robot-state"])
+        obs_robot = observations["robot-state"]
+        if obs_robot.dim() == 1:
+            obs_robot = obs_robot.unsqueeze(0)
+        state_features = self.robot_state_mlp(obs_robot)
 
         # 3. Concatenate
         return torch.add(img_features, state_features)
+
 
 
 class GodViewExtractor(BaseFeaturesExtractor):
