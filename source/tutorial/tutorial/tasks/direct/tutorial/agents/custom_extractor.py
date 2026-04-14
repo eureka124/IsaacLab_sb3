@@ -9,12 +9,13 @@ class CustomCombinedExtractor(BaseFeaturesExtractor):
         # 初始化父类，features_dim必须 > 0，这里先填 1，最后计算完会覆盖
         super().__init__(observation_space, features_dim=1)
 
-        extractors = {}
-
         # 1. Camera Network (CNN)
         # Input: STATES["camera"] -> (Channel, Height, Width)
         camera_space = observation_space["camera"]
         n_input_channels = camera_space.shape[0]
+        self.camera_shape = camera_space.shape
+        self.expected_camera_channels = n_input_channels
+        self.expected_camera_hw = tuple(camera_space.shape[-2:])
 
         self.cnn = nn.Sequential(
             nn.Conv2d(n_input_channels, 32, kernel_size=2, stride=1, padding=0),
@@ -59,8 +60,56 @@ class CustomCombinedExtractor(BaseFeaturesExtractor):
         # 1. Process Camera
         # Ensure observation is correctly typed and shaped for CNN (B, C, H, W)
         obs_camera = observations["camera"]
-        if obs_camera.dim() == 3:  # (C, H, W)
-            obs_camera = obs_camera.unsqueeze(0)
+        if obs_camera.dim() == 3:
+            # Could be CHW, HWC, or NHW (batched grayscale without channel dim).
+            expected_h, expected_w = self.expected_camera_hw
+            if (
+                obs_camera.shape[1:] == (expected_h, expected_w)
+                and self.expected_camera_channels == 1
+            ):
+                # NHW -> NCHW for grayscale camera.
+                obs_camera = obs_camera.unsqueeze(1)
+            elif obs_camera.shape[0] == self.expected_camera_channels:
+                obs_camera = obs_camera.unsqueeze(0)
+            elif obs_camera.shape[-1] == self.expected_camera_channels:
+                obs_camera = obs_camera.permute(2, 0, 1).unsqueeze(0)
+            else:
+                raise RuntimeError(
+                    "Unexpected camera tensor shape: "
+                    f"{tuple(obs_camera.shape)}; expected channel={self.expected_camera_channels}"
+                )
+        elif obs_camera.dim() == 4:
+            # Prefer identifying layout by spatial dimensions first.
+            expected_h, expected_w = self.expected_camera_hw
+            if obs_camera.shape[2:] == (expected_h, expected_w):
+                # NCHW or C/N swapped.
+                if obs_camera.shape[1] == self.expected_camera_channels:
+                    pass
+                elif obs_camera.shape[0] == self.expected_camera_channels:
+                    obs_camera = obs_camera.permute(1, 0, 2, 3)
+                else:
+                    raise RuntimeError(
+                        "Unexpected camera tensor shape: "
+                        f"{tuple(obs_camera.shape)}; expected NCHW with channel={self.expected_camera_channels}"
+                    )
+            elif obs_camera.shape[1:3] == (expected_h, expected_w):
+                # NHWC -> NCHW.
+                obs_camera = obs_camera.permute(0, 3, 1, 2)
+            else:
+                raise RuntimeError(
+                    "Unexpected camera tensor shape: "
+                    f"{tuple(obs_camera.shape)}; expected spatial={self.expected_camera_hw}"
+                )
+        else:
+            raise RuntimeError(
+                f"Unsupported camera tensor rank: {obs_camera.dim()} for shape {tuple(obs_camera.shape)}"
+            )
+
+        if obs_camera.shape[1] != self.expected_camera_channels:
+            raise RuntimeError(
+                "Camera tensor normalization failed: "
+                f"got shape {tuple(obs_camera.shape)}, expected channel={self.expected_camera_channels}"
+            )
 
         img_features = self.cnn(obs_camera)
         img_features = self.camera_fc(img_features)

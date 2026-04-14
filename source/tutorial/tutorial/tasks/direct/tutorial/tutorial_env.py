@@ -280,9 +280,19 @@ class TutorialEnv(DirectRLEnv):
     def _get_norm_depth_image(self) -> torch.Tensor:
         depth_frame = (
             self.scene["camera"].data.output["distance_to_image_plane"].clone()
-        ).squeeze(
-            -1
-        )  # shape: [env_num, 1, 48, 64]
+        )
+
+        # Normalize camera tensor to NCHW before pooling.
+        # Common layouts from sensor output are NHWC (last dim = 1) or NHW.
+        if depth_frame.dim() == 4 and depth_frame.shape[-1] == 1:
+            depth_frame = depth_frame.permute(0, 3, 1, 2)
+        elif depth_frame.dim() == 3:
+            depth_frame = depth_frame.unsqueeze(1)
+        elif depth_frame.dim() != 4:
+            raise RuntimeError(
+                f"Unexpected raw depth tensor shape: {tuple(depth_frame.shape)}"
+            )
+
         # 最小池化降采样 (kernel_size=4, stride=4) 从 (48, 64) 到 (12, 16)
         depth_frame = -torch.nn.functional.max_pool2d(
             -depth_frame, kernel_size=4, stride=4
