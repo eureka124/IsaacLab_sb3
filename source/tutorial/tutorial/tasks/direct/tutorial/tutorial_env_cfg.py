@@ -41,23 +41,6 @@ class MySceneCfg(InteractiveSceneCfg):
             pos=(0.0, 0.0, -1.0), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"
         ),
     )
-    # 添加地板
-    floor = RigidObjectCfg(
-        prim_path="{ENV_REGEX_NS}/Floor",
-        spawn=sim_utils.CuboidCfg(
-            size=(25.0, 25.0, 0.1),
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                kinematic_enabled=False,
-                disable_gravity=True,
-                linear_damping=1000.0,
-                angular_damping=1000.0,
-            ),
-            mass_props=sim_utils.MassPropertiesCfg(mass=10000.0),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
-        ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -0.04)),
-    )
-
     # 接触传感器 (监听机身和旋翼的接触力)
     contact_forces = ContactSensorCfg(
         prim_path="{ENV_REGEX_NS}/Robot/(base_link|rotor_0|rotor_1|rotor_2|rotor_3)",
@@ -69,7 +52,7 @@ class MySceneCfg(InteractiveSceneCfg):
     floor = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Floor",
         spawn=sim_utils.CuboidCfg(
-            size=(25.0, 25.0, 0.1),
+            size=(40.0, 40.0, 0.1),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=True,
@@ -87,13 +70,17 @@ class MySceneCfg(InteractiveSceneCfg):
 # 这里仅作为一个示例迷宫布局，你可以根据需要调整位置
 maze_obstacles = [
     # ((x, y, z), (sx, sy, sz))
-    # ((0.0, 0.0, 2.0), (15.0, 0.5, 4.0)),  # 中心横向墙
-    ((-5.0, -5.0, 2.0), (0.5, 10.0, 4.0)),  # 右侧纵向墙
-    ((5.0, 5.0, 2.0), (0.5, 10.0, 4.0)),  # 左侧纵向墙
-    ((-5.0, 5.0, 2.0), (10.0, 0.5, 4.0)),  # 右侧纵向墙
-    ((5.0, -5.0, 2.0), (10.0, 0.5, 4.0)),  # 左侧纵向墙
-    # ((0.0, 8.0, 2.0), (8.0, 0.5, 4.0)),  # 北部横向墙
-    # ((0.0, -8.0, 2.0), (8.0, 0.5, 4.0)),  # 南部横向墙
+    # ((0.0, 0.0, 2.0), (15.0, 0.5, 4.0)),
+    ((-10.0, -15.0, 2.0), (10.0, 0.5, 4.0)),
+    ((-15.0, -10.0, 2.0), (0.5, 10.0, 4.0)),
+    ((10.0, -15.0, 2.0), (10.0, 0.5, 4.0)),
+    ((15.0, -10.0, 2.0), (0.5, 10.0, 4.0)),
+    ((-10.0, 15.0, 2.0), (10.0, 0.5, 4.0)),
+    ((-15.0, 10.0, 2.0), (0.5, 10.0, 4.0)),
+    ((10.0, 15.0, 2.0), (10.0, 0.5, 4.0)),
+    ((15.0, 10.0, 2.0), (0.5, 10.0, 4.0)),
+    # ((0.0, 8.0, 2.0), (8.0, 0.5, 4.0)),
+    # ((0.0, -8.0, 2.0), (8.0, 0.5, 4.0)),
 ]
 
 for i, (pos, size) in enumerate(maze_obstacles):
@@ -205,7 +192,6 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 5  # 5个dt进行一次决策
     episode_length_s = 40  # 导航任务最长时间40s
-    random_reset = False  # 是否随机重置环境
 
     action_space = spaces.Box(
         low=np.array([-0.1, -0.5, -np.pi], dtype=np.float32),  # 每个维度的最小值
@@ -226,5 +212,5 @@ class TutorialEnvCfg(DirectRLEnvCfg):
 
     # scene
     scene: InteractiveSceneCfg = MySceneCfg(
-        num_envs=4, env_spacing=25.0, replicate_physics=True
+        num_envs=4, env_spacing=40.0, replicate_physics=True
     )

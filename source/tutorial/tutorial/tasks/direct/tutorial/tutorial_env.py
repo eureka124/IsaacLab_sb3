@@ -87,7 +87,7 @@ class TutorialEnv(DirectRLEnv):
         # Grid management
         self.env_spacing = self.cfg.scene.env_spacing
         self.grid_size = 10
-        self.cell_size = self.env_spacing / self.grid_size
+        self.cell_size = 20.0 / self.grid_size
 
         # Collect obstacles from scene
         self.obstacles = []
@@ -559,10 +559,9 @@ class TutorialEnv(DirectRLEnv):
         super()._reset_idx(env_ids)
 
         # 根据配置选择随机重置或固定重置
-        if self.cfg.random_reset:
-            self._randomize_grid_positions(env_ids)
-        else:
-            self._fixed_reset_positions(env_ids)
+        # self._randomize_grid_positions(env_ids)
+        # self._fixed_reset_positions(env_ids)
+        self._corner_diagonal_reset_positions(env_ids)
 
         # create markers if necessary for the first time
         # set their visibility to true
@@ -753,6 +752,103 @@ class TutorialEnv(DirectRLEnv):
         self.robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
 
         # 5. 初始化控制器状态
+        self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
+        w, x, y, z = torch.unbind(target_quat, dim=-1)
+        self.target_yaw_setpoint[env_ids] = torch.atan2(
+            2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)
+        ).unsqueeze(-1)
+
+    def _corner_diagonal_reset_positions(self, env_ids):
+        """障碍物随机网格重置；无人机起点为四角之一，目标为对角角点。"""
+        len_env_ids = len(env_ids)
+        default_root_state = self.robot.data.default_root_state[env_ids].clone()
+        # 将重置的环境位置偏移到对应环境的原点位置
+        default_root_state[:, :3] += self.scene.env_origins[env_ids]
+
+        # 1. 障碍物重置方式与 _randomize_grid_positions 一致
+        rand_vals = torch.rand((len_env_ids, 100), device=self.device)
+        perm = torch.argsort(rand_vals, dim=1)  # (len_env_ids, 100)
+        obs_grid_indices = perm[:, :60]  # (len_env_ids, 60)
+
+        def get_grid_coords_batch(indices):
+            row = indices // self.grid_size
+            col = indices % self.grid_size
+            x_center = (row - (self.grid_size / 2 - 0.5)) * self.cell_size
+            y_center = (col - (self.grid_size / 2 - 0.5)) * self.cell_size
+            return x_center, y_center
+
+        if len(self.obstacles) > 0:
+            for k in range(len(self.obstacles)):
+                if k >= 60:
+                    break
+
+                grid_idx = obs_grid_indices[:, k]
+                cx, cy = get_grid_coords_batch(grid_idx)
+                r = self.obstacle_radii[k]
+
+                max_offset = (self.cell_size / 2.0) - r
+                max_offset = torch.clamp(max_offset, min=0.0)
+
+                offset_x = (
+                    torch.rand(len_env_ids, device=self.device) * 2 - 1
+                ) * max_offset
+                offset_y = (
+                    torch.rand(len_env_ids, device=self.device) * 2 - 1
+                ) * max_offset
+
+                obs_x = cx + offset_x
+                obs_y = cy + offset_y
+
+                obs_defaults = (
+                    self.obstacles[k].data.default_root_state[env_ids].clone()
+                )
+                obs_defaults[:, 0] = obs_x + self.scene.env_origins[env_ids, 0]
+                obs_defaults[:, 1] = obs_y + self.scene.env_origins[env_ids, 1]
+
+                self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
+                self.obstacles[k].write_root_velocity_to_sim(
+                    obs_defaults[:, 7:], env_ids
+                )
+
+        # 2. 无人机起点为四个角之一，目标为对角角点
+        corner_limit = self.env_spacing / 2.0 - 1.0
+        corners_xy = torch.tensor(
+            [
+                [-corner_limit, -corner_limit],
+                [-corner_limit, corner_limit],
+                [corner_limit, -corner_limit],
+                [corner_limit, corner_limit],
+            ],
+            device=self.device,
+            dtype=default_root_state.dtype,
+        )
+        corner_idx = torch.randint(0, 4, (len_env_ids,), device=self.device)
+        # 对角映射: 0<->3, 1<->2
+        diagonal_idx = 3 - corner_idx
+
+        start_xy = corners_xy[corner_idx]
+        goal_xy = corners_xy[diagonal_idx]
+
+        default_root_state[:, 0] = start_xy[:, 0] + self.scene.env_origins[env_ids, 0]
+        default_root_state[:, 1] = start_xy[:, 1] + self.scene.env_origins[env_ids, 1]
+        default_root_state[:, 2] = 2.0
+
+        target_z = torch.full((len_env_ids,), 2.0, device=self.device)
+        xyz = torch.cat([goal_xy, target_z.unsqueeze(-1)], dim=-1)
+        self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
+
+        # 3. 朝向目标并写入无人机状态
+        target_yaw = get_target_direction(
+            self.target_pos[env_ids, :2], default_root_state[:, :2]
+        )
+        target_quat = yaw_to_quaternion(target_yaw)
+        quat_norm = torch.norm(target_quat, dim=-1, keepdim=True)
+        target_quat = target_quat / (quat_norm + 1e-8)
+        default_root_state[:, 3:7] = target_quat
+
+        self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
+        self.robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
+
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         w, x, y, z = torch.unbind(target_quat, dim=-1)
         self.target_yaw_setpoint[env_ids] = torch.atan2(
