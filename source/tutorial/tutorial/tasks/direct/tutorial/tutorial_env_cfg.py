@@ -14,15 +14,12 @@ from isaaclab.sensors import ContactSensorCfg
 import numpy as np
 from gymnasium import spaces
 
-_robot_spawn_cfg = HUMMINGBIRD_CFG.spawn.copy()
-_robot_spawn_cfg.activate_contact_sensors = True
-
 
 @configclass
 class MySceneCfg(InteractiveSceneCfg):
     # 无人机模型
     robot_cfg: ArticulationCfg = HUMMINGBIRD_CFG.replace(
-        prim_path="{ENV_REGEX_NS}/Robot", spawn=_robot_spawn_cfg
+        prim_path="{ENV_REGEX_NS}/Robot"
     )
     # 无人机主观深度相机
     camera = TiledCameraCfg(

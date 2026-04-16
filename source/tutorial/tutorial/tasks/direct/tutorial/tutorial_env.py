@@ -4,11 +4,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import torch
+import torch.nn.functional as F
 import isaaclab.sim as sim_utils
 from isaaclab.envs import DirectRLEnv
 from isaaclab.assets import RigidObject
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
-from .tutorial_env_cfg import TutorialEnvCfg
+from .tutorial_env_cfg import TutorialEnvCfg, maze_obstacles
 from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG
 from isaaclab.markers import VisualizationMarkers
 from omni_drones.controllers import LeePositionController
@@ -16,6 +17,73 @@ from isaaclab.utils.math import quat_from_matrix
 from matplotlib import pyplot as plt
 import gymnasium as gym
 import numpy as np
+import skfmm
+
+
+def _rectangle_sdf(
+    grid_x: np.ndarray,
+    grid_y: np.ndarray,
+    center_xy: tuple[float, float],
+    size_xy: tuple[float, float],
+    inflation: float,
+) -> np.ndarray:
+    half_x = 0.5 * size_xy[0] + inflation
+    half_y = 0.5 * size_xy[1] + inflation
+    dx = np.abs(grid_x - center_xy[0]) - half_x
+    dy = np.abs(grid_y - center_xy[1]) - half_y
+    outside_dx = np.maximum(dx, 0.0)
+    outside_dy = np.maximum(dy, 0.0)
+    outside_dist = np.sqrt(outside_dx * outside_dx + outside_dy * outside_dy)
+    inside_dist = np.minimum(np.maximum(dx, dy), 0.0)
+    return outside_dist + inside_dist
+
+
+def _build_toa_map(
+    goal_xy: np.ndarray,
+    grid_xs: np.ndarray,
+    grid_ys: np.ndarray,
+    obstacles: list[tuple[tuple[float, float, float], tuple[float, float, float]]],
+    robot_radius: float,
+    safe_distance: float,
+    slow_speed: float,
+) -> np.ndarray:
+    grid_x, grid_y = np.meshgrid(grid_xs, grid_ys, indexing="xy")
+    obstacle_sdf = np.full_like(grid_x, np.inf, dtype=np.float32)
+
+    for obstacle_pos, obstacle_size in obstacles:
+        obstacle_sdf = np.minimum(
+            obstacle_sdf,
+            _rectangle_sdf(
+                grid_x,
+                grid_y,
+                obstacle_pos[:2],
+                obstacle_size[:2],
+                robot_radius,
+            ).astype(np.float32),
+        )
+
+    obstacle_mask = obstacle_sdf <= 0.0
+    clearance = np.maximum(obstacle_sdf, 0.0)
+    speed = np.ones_like(clearance, dtype=np.float32)
+    if safe_distance > 1e-6:
+        slow_region = clearance <= safe_distance
+        speed[slow_region] = slow_speed + (1.0 - slow_speed) * (
+            clearance[slow_region] / safe_distance
+        )
+    speed = np.clip(speed, 1e-3, 1.0)
+    speed = np.ma.array(speed, mask=obstacle_mask)
+
+    grid_dx = float(grid_xs[1] - grid_xs[0])
+    goal_radius = max(grid_dx * 1.5, 1e-3)
+    phi = np.sqrt((grid_x - goal_xy[0]) ** 2 + (grid_y - goal_xy[1]) ** 2) - goal_radius
+    toa_map = skfmm.travel_time(phi, speed, dx=grid_dx)
+
+    if np.ma.isMaskedArray(toa_map):
+        finite_values = toa_map.compressed()
+        fill_value = float(finite_values.max()) if finite_values.size > 0 else 0.0
+        toa_map = toa_map.filled(fill_value)
+
+    return np.asarray(toa_map, dtype=np.float32)
 
 
 class TutorialEnv(DirectRLEnv):
@@ -89,6 +157,35 @@ class TutorialEnv(DirectRLEnv):
         self.grid_size = 10
         self.cell_size = 20.0 / self.grid_size
 
+        # ToA map management
+        self.toa_grid_size = 201
+        half_extent = self.cfg.scene.env_spacing * 0.5
+        self.toa_x_min = -half_extent
+        self.toa_x_max = half_extent
+        self.toa_y_min = -half_extent
+        self.toa_y_max = half_extent
+        self.toa_grid_xs = np.linspace(
+            self.toa_x_min,
+            self.toa_x_max,
+            self.toa_grid_size,
+            dtype=np.float32,
+        )
+        self.toa_grid_ys = np.linspace(
+            self.toa_y_min,
+            self.toa_y_max,
+            self.toa_grid_size,
+            dtype=np.float32,
+        )
+        self.toa_robot_radius = 0.4
+        self.toa_safe_distance = 2.0
+        self.toa_slow_speed = 0.2
+        self.toa_maps = torch.zeros(
+            (self.num_envs, self.toa_grid_size, self.toa_grid_size),
+            device=self.device,
+        )
+        self.prev_toa = torch.zeros(self.num_envs, device=self.device)
+        self.toa_cache_initialized = False
+
         # Collect obstacles from scene
         self.obstacles = []
         self.obstacle_radii = []
@@ -104,6 +201,59 @@ class TutorialEnv(DirectRLEnv):
 
         if self.obstacles:
             self.obstacle_radii = torch.tensor(self.obstacle_radii, device=self.device)
+
+    def _sample_toa_from_maps(
+        self,
+        toa_maps: torch.Tensor,
+        positions_xy: torch.Tensor,
+        origins_xy: torch.Tensor,
+    ) -> torch.Tensor:
+        local_xy = positions_xy - origins_xy
+        x_norm = (
+            2.0 * (local_xy[:, 0] - self.toa_x_min) / (self.toa_x_max - self.toa_x_min)
+            - 1.0
+        )
+        y_norm = (
+            2.0 * (local_xy[:, 1] - self.toa_y_min) / (self.toa_y_max - self.toa_y_min)
+            - 1.0
+        )
+        sample_grid = torch.stack((x_norm, y_norm), dim=-1).view(-1, 1, 1, 2)
+        sampled_toa = F.grid_sample(
+            toa_maps.unsqueeze(1),
+            sample_grid,
+            mode="bilinear",
+            padding_mode="border",
+            align_corners=True,
+        )
+        return sampled_toa[:, 0, 0, 0]
+
+    def _update_toa_cache(self, env_ids: torch.Tensor) -> None:
+        if env_ids is None or len(env_ids) == 0:
+            return
+
+        for env_id in env_ids.tolist():
+            goal_xy = (
+                (self.target_pos[env_id, :2] - self.scene.env_origins[env_id, :2])
+                .detach()
+                .cpu()
+                .numpy()
+            )
+            toa_map = _build_toa_map(
+                goal_xy=goal_xy,
+                grid_xs=self.toa_grid_xs,
+                grid_ys=self.toa_grid_ys,
+                obstacles=maze_obstacles,
+                robot_radius=self.toa_robot_radius,
+                safe_distance=self.toa_safe_distance,
+                slow_speed=self.toa_slow_speed,
+            )
+            self.toa_maps[env_id] = torch.from_numpy(toa_map).to(self.device)
+
+        self.prev_toa[env_ids] = self._sample_toa_from_maps(
+            self.toa_maps[env_ids],
+            self.robot.data.root_pos_w[env_ids, :2],
+            self.scene.env_origins[env_ids, :2],
+        )
 
     def _setup_scene(self):
         self.robot = self.scene["robot_cfg"]
@@ -459,12 +609,21 @@ class TutorialEnv(DirectRLEnv):
         else:
             obstacle_penalty = torch.zeros(self.num_envs, device=self.device)
 
+        current_toa = self._sample_toa_from_maps(
+            self.toa_maps,
+            self.robot.data.root_pos_w[:, :2],
+            self.scene.env_origins[:, :2],
+        )
+        reward_toa = self.prev_toa - current_toa
+        self.prev_toa = current_toa.detach()
+
         # print("Penalty Smooth:", penalty_smooth)
         # print("Reward Velocity:", reward_velocity)
         # print("Collided:", self.collided)
         # print("Arrived:", self.arrived)
         total_reward = compute_rewards(
             reward_velocity,
+            reward_toa,
             self.collided,
             penalty_smooth,
             self.arrived,
@@ -479,6 +638,10 @@ class TutorialEnv(DirectRLEnv):
                 print("direction_vector:", direction_vector)
                 print("robot_pos:", robot_pos)
                 print("target_pos:", target_pos)
+            if torch.isnan(reward_toa).any():
+                print("NaN detected in reward_toa")
+                print("current_toa:", current_toa)
+                print("prev_toa:", self.prev_toa)
             if torch.isnan(penalty_smooth).any():
                 print("NaN detected in penalty_smooth")
                 print("actions:", self.actions)
@@ -562,6 +725,10 @@ class TutorialEnv(DirectRLEnv):
         # self._randomize_grid_positions(env_ids)
         # self._fixed_reset_positions(env_ids)
         self._corner_diagonal_reset_positions(env_ids)
+
+        if not self.toa_cache_initialized:
+            self._update_toa_cache(env_ids)
+            self.toa_cache_initialized = True
 
         # create markers if necessary for the first time
         # set their visibility to true
@@ -952,20 +1119,18 @@ class DepthImageBuffer:
 @torch.jit.script
 def compute_rewards(
     reward_velocity: torch.Tensor,
+    reward_toa: torch.Tensor,
     collided: torch.Tensor,
     penalty_smooth: torch.Tensor,
     arrived: torch.Tensor,
     penalty_obstacle: torch.Tensor,
 ):
-    total_reward = (
-        reward_velocity * 1.0  # 速度在目标方向的分量
-        - penalty_smooth * 0.1  # 平滑度惩罚
-        - collided * 200.0  # 碰撞惩罚
-        + arrived * 300.0  # 到达奖励
-        # - penalty_obstacle * 2  # 障碍物距离惩罚
-    )
-    # print("Total Reward:", total_reward)
+    total_reward = reward_velocity * 1.0 + reward_toa * 100.0
+    total_reward = total_reward - penalty_smooth * 0.1
+    total_reward = total_reward - collided * 200.0
+    total_reward = total_reward + arrived * 300.0
     # print("Reward Velocity:", reward_velocity)
+    # print("Reward TOA:", reward_toa)
     # print("Penalty Smooth:", penalty_smooth)
     # print("Collided:", collided)
     # print("Arrived:", arrived)
