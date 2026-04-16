@@ -227,6 +227,31 @@ class TutorialEnv(DirectRLEnv):
         )
         return sampled_toa[:, 0, 0, 0]
 
+    def _compute_toa_gradient(self, positions_xy: torch.Tensor) -> torch.Tensor:
+        """Compute TOA map gradient in world XY at given positions."""
+        dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
+        delta = torch.tensor([dx, 0.0], device=self.device, dtype=positions_xy.dtype)
+        delta_y = torch.tensor([0.0, dx], device=self.device, dtype=positions_xy.dtype)
+
+        origins_xy = self.scene.env_origins[:, :2]
+
+        toa_xp = self._sample_toa_from_maps(
+            self.toa_maps, positions_xy + delta, origins_xy
+        )
+        toa_xm = self._sample_toa_from_maps(
+            self.toa_maps, positions_xy - delta, origins_xy
+        )
+        toa_yp = self._sample_toa_from_maps(
+            self.toa_maps, positions_xy + delta_y, origins_xy
+        )
+        toa_ym = self._sample_toa_from_maps(
+            self.toa_maps, positions_xy - delta_y, origins_xy
+        )
+
+        grad_x = (toa_xp - toa_xm) / (2.0 * dx)
+        grad_y = (toa_yp - toa_ym) / (2.0 * dx)
+        return torch.stack([grad_x, grad_y], dim=-1)
+
     def _update_toa_cache(self, env_ids: torch.Tensor) -> None:
         if env_ids is None or len(env_ids) == 0:
             return
@@ -617,6 +642,21 @@ class TutorialEnv(DirectRLEnv):
         reward_toa = self.prev_toa - current_toa
         self.prev_toa = current_toa.detach()
 
+        # Yaw penalty: angle between yaw heading and negative TOA gradient direction
+        toa_grad = self._compute_toa_gradient(self.robot.data.root_pos_w[:, :2])
+        desired_dir = -toa_grad
+        desired_norm = torch.norm(desired_dir, dim=-1, keepdim=True)
+        desired_dir = desired_dir / (desired_norm + 1e-6)
+
+        robot_quat = self.robot.data.root_quat_w
+        w, x, y, z = torch.unbind(robot_quat, dim=-1)
+        yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+        heading_dir = torch.stack([torch.cos(yaw), torch.sin(yaw)], dim=-1)
+
+        dot = torch.sum(heading_dir * desired_dir, dim=-1).clamp(-1.0, 1.0)
+        yaw_diff = torch.acos(dot)
+        yaw_penalty = yaw_diff * (desired_norm.squeeze(-1) > 1e-5).float()
+
         # print("Penalty Smooth:", penalty_smooth)
         # print("Reward Velocity:", reward_velocity)
         # print("Collided:", self.collided)
@@ -628,6 +668,7 @@ class TutorialEnv(DirectRLEnv):
             penalty_smooth,
             self.arrived,
             obstacle_penalty,
+            yaw_penalty,
         )  # print(self.robot.data)
 
         # 检查 total_reward 是否包含 NaN 值，如果有则中断程序
@@ -1124,17 +1165,20 @@ def compute_rewards(
     penalty_smooth: torch.Tensor,
     arrived: torch.Tensor,
     penalty_obstacle: torch.Tensor,
+    penalty_yaw: torch.Tensor,
 ):
-    total_reward = reward_velocity * 1.0 + reward_toa * 100.0
+    total_reward = reward_toa * 100.0
     total_reward = total_reward - penalty_smooth * 0.1
     total_reward = total_reward - collided * 200.0
     total_reward = total_reward + arrived * 300.0
+    total_reward = total_reward - penalty_yaw
     # print("Reward Velocity:", reward_velocity)
     # print("Reward TOA:", reward_toa)
     # print("Penalty Smooth:", penalty_smooth)
     # print("Collided:", collided)
     # print("Arrived:", arrived)
     # print("Penalty Obstacle:", penalty_obstacle)
+    # print("Penalty Yaw:", penalty_yaw)
     return total_reward  # 返回 (num_envs,) 以匹配 SB3 预期
 
 
