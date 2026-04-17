@@ -86,6 +86,14 @@ def _build_toa_map(
     return np.asarray(toa_map, dtype=np.float32)
 
 
+def _circle_obstacle_to_rect(
+    center_xy: tuple[float, float],
+    radius: float,
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    diameter = 2.0 * float(radius)
+    return (float(center_xy[0]), float(center_xy[1]), 0.0), (diameter, diameter, 1.0)
+
+
 class TutorialEnv(DirectRLEnv):
     cfg: TutorialEnvCfg
 
@@ -200,7 +208,11 @@ class TutorialEnv(DirectRLEnv):
                 self.obstacle_radii.append(obs.cfg.spawn.radius)
 
         if self.obstacles:
-            self.obstacle_radii = torch.tensor(self.obstacle_radii, device=self.device)
+            self.obstacle_radii_tensor = torch.tensor(
+                self.obstacle_radii, device=self.device
+            )
+        else:
+            self.obstacle_radii_tensor = torch.zeros((0,), device=self.device)
 
     def _sample_toa_from_maps(
         self,
@@ -257,17 +269,39 @@ class TutorialEnv(DirectRLEnv):
             return
 
         for env_id in env_ids.tolist():
+            dynamic_obstacles: list[
+                tuple[tuple[float, float, float], tuple[float, float, float]]
+            ] = []
+            if len(self.obstacles) > 0:
+                env_origin_xy = self.scene.env_origins[env_id, :2]
+                for obs_obj, obs_radius in zip(
+                    self.obstacles, self.obstacle_radii_tensor
+                ):
+                    obs_xy_local = (
+                        (obs_obj.data.root_pos_w[env_id, :2] - env_origin_xy)
+                        .detach()
+                        .cpu()
+                        .numpy()
+                    )
+                    dynamic_obstacles.append(
+                        _circle_obstacle_to_rect(
+                            (float(obs_xy_local[0]), float(obs_xy_local[1])),
+                            float(obs_radius.item()),
+                        )
+                    )
+
             goal_xy = (
                 (self.target_pos[env_id, :2] - self.scene.env_origins[env_id, :2])
                 .detach()
                 .cpu()
                 .numpy()
             )
+            toa_obstacles = list(maze_obstacles) + dynamic_obstacles
             toa_map = _build_toa_map(
                 goal_xy=goal_xy,
                 grid_xs=self.toa_grid_xs,
                 grid_ys=self.toa_grid_ys,
-                obstacles=maze_obstacles,
+                obstacles=toa_obstacles,
                 robot_radius=self.toa_robot_radius,
                 safe_distance=self.toa_safe_distance,
                 slow_speed=self.toa_slow_speed,
@@ -559,7 +593,7 @@ class TutorialEnv(DirectRLEnv):
             feat_xy = selected_rel_pos_b[..., :2]
 
             # Gather radii: (num_envs, k)
-            selected_radii = self.obstacle_radii[indices]
+            selected_radii = self.obstacle_radii_tensor[indices]
 
             # Combine: (num_envs, k, 3) -> [x, y, r]
             critic_obs = torch.cat([feat_xy, selected_radii.unsqueeze(-1)], dim=-1)
@@ -622,8 +656,8 @@ class TutorialEnv(DirectRLEnv):
             )  # (num_obstacles, num_envs)
 
             # 计算到障碍物表面的距离: 中心距离 - 障碍物半径
-            # self.obstacle_radii: (num_obstacles,) -> unsqueeze(1) -> (num_obstacles, 1)
-            dist_to_surface = dists - self.obstacle_radii.unsqueeze(1)
+            # self.obstacle_radii_tensor: (num_obstacles,) -> unsqueeze(1) -> (num_obstacles, 1)
+            dist_to_surface = dists - self.obstacle_radii_tensor.unsqueeze(1)
 
             # 找到最近的障碍物距离 (num_envs,)
             min_dist_to_surface, _ = torch.min(dist_to_surface, dim=0)
@@ -767,9 +801,8 @@ class TutorialEnv(DirectRLEnv):
         # self._fixed_reset_positions(env_ids)
         self._corner_diagonal_reset_positions(env_ids)
 
-        if not self.toa_cache_initialized:
-            self._update_toa_cache(env_ids)
-            self.toa_cache_initialized = True
+        self._update_toa_cache(env_ids)
+        self.toa_cache_initialized = True
 
         # create markers if necessary for the first time
         # set their visibility to true
@@ -810,7 +843,7 @@ class TutorialEnv(DirectRLEnv):
 
                 grid_idx = obs_grid_indices[:, k]
                 cx, cy = get_grid_coords_batch(grid_idx)
-                r = self.obstacle_radii[k]
+                r = self.obstacle_radii_tensor[k]
 
                 max_offset = (self.cell_size / 2.0) - r
                 max_offset = torch.clamp(max_offset, min=0.0)
@@ -992,7 +1025,7 @@ class TutorialEnv(DirectRLEnv):
 
                 grid_idx = obs_grid_indices[:, k]
                 cx, cy = get_grid_coords_batch(grid_idx)
-                r = self.obstacle_radii[k]
+                r = self.obstacle_radii_tensor[k]
 
                 max_offset = (self.cell_size / 2.0) - r
                 max_offset = torch.clamp(max_offset, min=0.0)
@@ -1168,6 +1201,8 @@ def compute_rewards(
     penalty_yaw: torch.Tensor,
 ):
     total_reward = reward_toa * 100.0
+    # total_reward = total_reward + reward_velocity * 0.5
+    # total_reward = total_reward - penalty_obstacle
     total_reward = total_reward - penalty_smooth * 0.1
     total_reward = total_reward - collided * 200.0
     total_reward = total_reward + arrived * 300.0
