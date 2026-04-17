@@ -70,7 +70,6 @@ tests/
 # Docker history
 .isaac-lab-docker-history
 
-assets/
 *.sh
 record/
 records/
