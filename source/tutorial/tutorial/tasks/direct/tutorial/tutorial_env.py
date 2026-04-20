@@ -117,14 +117,14 @@ class TutorialEnv(DirectRLEnv):
         # 创建可视化目标位置的标记
         self.target_pos = torch.zeros((self.cfg.scene.num_envs, 3), device=self.device)
         marker_cfg = CUBOID_MARKER_CFG.copy()
-        marker_cfg.markers["cuboid"].size = (0.2, 0.2, 0.2)
+        marker_cfg.markers["cuboid"].size = (1.0, 1.0, 1.0)
         # 目标位置可视化
         marker_cfg.prim_path = "/Visuals/Command/goal_position"
         self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
 
         # 速度方向箭头可视化
         arrow_cfg = RED_ARROW_X_MARKER_CFG.copy()
-        arrow_cfg.markers["arrow"].scale = (0.5, 0.5, 0.5)  # 默认缩放
+        arrow_cfg.markers["arrow"].scale = (2.5, 2.5, 2.5)  # 默认缩放
         arrow_cfg.prim_path = "/Visuals/Command/velocity_arrow"
         self.vel_arrow_visualizer = VisualizationMarkers(arrow_cfg)
 
