@@ -1,5 +1,9 @@
 import os
 import glob
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+import wandb
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 
 
@@ -142,3 +146,104 @@ class IsaacLogCallback(BaseCallback):
             self.total_episodes = 0
 
         return True
+
+
+class ToaVisualizationCallback(BaseCallback):
+    """
+    Custom callback to visualize the TOA (Time of Arrival) map of the first environment
+     and push it to WandB.
+    """
+
+    def __init__(self, log_freq: int = 10000, verbose: int = 0):
+        super().__init__(verbose)
+        self.log_freq = log_freq
+
+    def _on_step(self) -> bool:
+        if self.n_calls % self.log_freq == 0:
+            self.visualize_toa()
+        return True
+
+    def visualize_toa(self):
+        # Access the environment from the model
+        env = self.training_env
+        if env is None:
+            return
+
+        # Unwrap to get the TutorialEnv instance
+        # SB3 environments are often wrapped in VecEnv layers
+        try:
+            # Try to get the original Isaac Lab env
+            # The structure is usually VecNormalize -> Sb3VecEnvWrapper -> gym.Env
+            curr_env = env
+            while hasattr(curr_env, "venv"):
+                curr_env = curr_env.venv
+            if hasattr(curr_env, "unwrapped"):
+                raw_env = curr_env.unwrapped
+            else:
+                raw_env = curr_env
+
+            # Check if it has toa_maps
+            if not hasattr(raw_env, "toa_maps"):
+                if self.verbose > 0:
+                    print(
+                        "[ToaVisualizationCallback] Environment does not have 'toa_maps' attribute."
+                    )
+                return
+
+            # Get the TOA map for the first environment (env_id=0)
+            toa_map_tensor = raw_env.toa_maps[0]
+            toa_map = toa_map_tensor.detach().cpu().numpy()
+
+            # Optional: Get current robot and goal position for overlay
+            robot_pos = raw_env.robot.data.root_pos_w[0, :2].detach().cpu().numpy()
+            goal_pos = raw_env.target_pos[0, :2].detach().cpu().numpy()
+            origin = raw_env.scene.env_origins[0, :2].detach().cpu().numpy()
+
+            # Transform world coordinates to grid coordinates for plotting
+            # Map extent in local coordinates
+            x_min, x_max = raw_env.toa_x_min, raw_env.toa_x_max
+            y_min, y_max = raw_env.toa_y_min, raw_env.toa_y_max
+
+            # Local positions
+            robot_local = robot_pos - origin
+            goal_local = goal_pos - origin
+
+            # Create the plot
+            fig, ax = plt.subplots(figsize=(8, 8))
+            im = ax.imshow(
+                toa_map.T,
+                origin="lower",
+                extent=[x_min, x_max, y_min, y_max],
+                cmap="viridis",
+            )
+            fig.colorbar(im, ax=ax, label="Time of Arrival")
+
+            # Overlay robot and goal
+            ax.scatter(
+                robot_local[0],
+                robot_local[1],
+                c="red",
+                marker="o",
+                s=100,
+                label="Robot",
+            )
+            ax.scatter(
+                goal_local[0], goal_local[1], c="white", marker="*", s=200, label="Goal"
+            )
+
+            ax.set_title(f"TOA Map - Step {self.num_timesteps}")
+            ax.set_xlabel("Local X (m)")
+            ax.set_ylabel("Local Y (m)")
+            ax.legend()
+
+            # Log to WandB if active
+            if wandb.run is not None:
+                wandb.log(
+                    {"Visualization/TOA_Map": wandb.Image(fig)}, step=self.num_timesteps
+                )
+
+            plt.close(fig)
+
+        except Exception as e:
+            if self.verbose > 0:
+                print(f"[ToaVisualizationCallback] Error during visualization: {e}")

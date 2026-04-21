@@ -65,6 +65,12 @@ parser.add_argument(
     help="Continue the training from checkpoint.",
 )
 parser.add_argument(
+    "--wandb",
+    action="store_true",
+    default=True,
+    help="Enable WandB logging.",
+)
+parser.add_argument(
     "--max_iterations", type=int, default=None, help="RL Policy training iterations."
 )
 parser.add_argument(
@@ -133,6 +139,8 @@ from sb3_contrib import RecurrentPPO
 from stable_baselines3.ppo import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, LogEveryNTimesteps
 from stable_baselines3.common.vec_env import VecNormalize
+from wandb.integration.sb3 import WandbCallback
+import wandb
 
 # Isomorphic import to avoid circular dependency issues if any
 import sys
@@ -157,6 +165,7 @@ from custom_extractor import CustomCombinedExtractor, GodViewExtractor
 from custom_callback import (
     IsaacLogCallback,
     CheckpointCallbackWithLimit,
+    ToaVisualizationCallback,
 )
 
 
@@ -304,6 +313,22 @@ def main(
     if args_cli.checkpoint is not None:
         agent = agent.load(args_cli.checkpoint, env, print_system_info=True)
 
+    # wandb logging
+    if args_cli.wandb:
+        run = wandb.init(
+            project="isaaclab_tutorial",
+            name=args_cli.name if args_cli.name else run_info,
+            config={
+                "env_cfg": (
+                    env_cfg.to_dict() if hasattr(env_cfg, "to_dict") else str(env_cfg)
+                ),
+                "agent_cfg": agent_cfg,
+            },
+            sync_tensorboard=False,
+            dir=log_dir,
+            save_code=True,
+        )
+
     # callbacks for agent
     checkpoint_callback = CheckpointCallbackWithLimit(
         save_freq=args_cli.checkpoint_interval,
@@ -318,6 +343,13 @@ def main(
         LogEveryNTimesteps(n_steps=args_cli.log_interval),
         isaac_log_callback,
     ]
+    if args_cli.wandb:
+        callbacks.extend(
+            [
+                WandbCallback(verbose=2),
+                ToaVisualizationCallback(log_freq=args_cli.log_interval, verbose=1),
+            ]
+        )
 
     # train the agent
     with contextlib.suppress(KeyboardInterrupt):
@@ -329,6 +361,8 @@ def main(
         )
     # save the final model
     agent.save(os.path.join(log_dir, "model"))
+    if args_cli.wandb:
+        run.finish()
     print("Saving to:")
     print(os.path.join(log_dir, "model.zip"))
 
