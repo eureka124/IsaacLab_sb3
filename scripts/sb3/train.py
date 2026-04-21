@@ -326,7 +326,7 @@ def main(
                 "agent_cfg": agent_cfg,
             },
             sync_tensorboard=False,
-            dir=log_dir,
+            dir=os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")),
             save_code=True,
         )
 

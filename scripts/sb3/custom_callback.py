@@ -175,18 +175,35 @@ class ToaVisualizationCallback(BaseCallback):
             # Try to get the original Isaac Lab env
             # The structure is usually VecNormalize -> Sb3VecEnvWrapper -> gym.Env
             curr_env = env
-            while hasattr(curr_env, "venv"):
-                curr_env = curr_env.venv
+            # SB3 VecEnv unwrap logic
             if hasattr(curr_env, "unwrapped"):
                 raw_env = curr_env.unwrapped
+            elif hasattr(curr_env, "envs"):
+                raw_env = curr_env.envs[0]
             else:
                 raw_env = curr_env
+
+            # Recursively unwrap to find the one with toa_maps
+            # This handles SB3 wrappers, Gym wrappers, and VecEnv wrappers
+            max_depth = 10
+            while not hasattr(raw_env, "toa_maps") and max_depth > 0:
+                if hasattr(raw_env, "env"):
+                    raw_env = raw_env.env
+                elif hasattr(raw_env, "venv"):
+                    raw_env = raw_env.venv
+                    if hasattr(raw_env, "envs"):
+                        raw_env = raw_env.envs[0]
+                elif hasattr(raw_env, "unwrapped"):
+                    raw_env = raw_env.unwrapped
+                else:
+                    break
+                max_depth -= 1
 
             # Check if it has toa_maps
             if not hasattr(raw_env, "toa_maps"):
                 if self.verbose > 0:
                     print(
-                        "[ToaVisualizationCallback] Environment does not have 'toa_maps' attribute."
+                        f"[ToaVisualizationCallback] Found env type {type(raw_env)} but it does not have 'toa_maps'."
                     )
                 return
 
