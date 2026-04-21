@@ -5,12 +5,14 @@
 
 import torch
 import torch.nn.functional as F
+import os
 import isaaclab.sim as sim_utils
 import omni.timeline
 from isaaclab.envs import DirectRLEnv
 from isaaclab.assets import RigidObject
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from .tutorial_env_cfg import TutorialEnvCfg, maze_obstacles
+from . import TOA
 from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG
 from isaaclab.markers import VisualizationMarkers
 from omni_drones.controllers import LeePositionController
@@ -18,81 +20,6 @@ from isaaclab.utils.math import quat_from_matrix
 from matplotlib import pyplot as plt
 import gymnasium as gym
 import numpy as np
-import skfmm
-
-
-def _rectangle_sdf(
-    grid_x: np.ndarray,
-    grid_y: np.ndarray,
-    center_xy: tuple[float, float],
-    size_xy: tuple[float, float],
-    inflation: float,
-) -> np.ndarray:
-    half_x = 0.5 * size_xy[0] + inflation
-    half_y = 0.5 * size_xy[1] + inflation
-    dx = np.abs(grid_x - center_xy[0]) - half_x
-    dy = np.abs(grid_y - center_xy[1]) - half_y
-    outside_dx = np.maximum(dx, 0.0)
-    outside_dy = np.maximum(dy, 0.0)
-    outside_dist = np.sqrt(outside_dx * outside_dx + outside_dy * outside_dy)
-    inside_dist = np.minimum(np.maximum(dx, dy), 0.0)
-    return outside_dist + inside_dist
-
-
-def _build_toa_map(
-    goal_xy: np.ndarray,
-    grid_xs: np.ndarray,
-    grid_ys: np.ndarray,
-    obstacles: list[tuple[tuple[float, float, float], tuple[float, float, float]]],
-    robot_radius: float,
-    safe_distance: float,
-    slow_speed: float,
-) -> np.ndarray:
-    grid_x, grid_y = np.meshgrid(grid_xs, grid_ys, indexing="xy")
-    obstacle_sdf = np.full_like(grid_x, np.inf, dtype=np.float32)
-
-    for obstacle_pos, obstacle_size in obstacles:
-        obstacle_sdf = np.minimum(
-            obstacle_sdf,
-            _rectangle_sdf(
-                grid_x,
-                grid_y,
-                obstacle_pos[:2],
-                obstacle_size[:2],
-                robot_radius,
-            ).astype(np.float32),
-        )
-
-    obstacle_mask = obstacle_sdf <= 0.0
-    clearance = np.maximum(obstacle_sdf, 0.0)
-    speed = np.ones_like(clearance, dtype=np.float32)
-    if safe_distance > 1e-6:
-        slow_region = clearance <= safe_distance
-        speed[slow_region] = slow_speed + (1.0 - slow_speed) * (
-            clearance[slow_region] / safe_distance
-        )
-    speed = np.clip(speed, 1e-3, 1.0)
-    speed = np.ma.array(speed, mask=obstacle_mask)
-
-    grid_dx = float(grid_xs[1] - grid_xs[0])
-    goal_radius = max(grid_dx * 1.5, 1e-3)
-    phi = np.sqrt((grid_x - goal_xy[0]) ** 2 + (grid_y - goal_xy[1]) ** 2) - goal_radius
-    toa_map = skfmm.travel_time(phi, speed, dx=grid_dx)
-
-    if np.ma.isMaskedArray(toa_map):
-        finite_values = toa_map.compressed()
-        fill_value = float(finite_values.max()) if finite_values.size > 0 else 0.0
-        toa_map = toa_map.filled(fill_value)
-
-    return np.asarray(toa_map, dtype=np.float32)
-
-
-def _circle_obstacle_to_rect(
-    center_xy: tuple[float, float],
-    radius: float,
-) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
-    diameter = 2.0 * float(radius)
-    return (float(center_xy[0]), float(center_xy[1]), 0.0), (diameter, diameter, 1.0)
 
 
 class TutorialEnv(DirectRLEnv):
@@ -193,7 +120,13 @@ class TutorialEnv(DirectRLEnv):
             device=self.device,
         )
         self.prev_toa = torch.zeros(self.num_envs, device=self.device)
-        self.toa_cache_initialized = False
+
+        # TOA Map Saving
+        self.toa_save_interval = 1000  # steps
+        self.step_count = 0
+        self.toa_output_dir = os.path.join(os.getcwd(), "outputs", "toa_maps")
+        if not os.path.exists(self.toa_output_dir):
+            os.makedirs(self.toa_output_dir)
 
         # Collect obstacles from scene
         self.obstacles = []
@@ -221,49 +154,21 @@ class TutorialEnv(DirectRLEnv):
         positions_xy: torch.Tensor,
         origins_xy: torch.Tensor,
     ) -> torch.Tensor:
-        local_xy = positions_xy - origins_xy
-        x_norm = (
-            2.0 * (local_xy[:, 0] - self.toa_x_min) / (self.toa_x_max - self.toa_x_min)
-            - 1.0
+        return TOA.sample_toa_from_maps(
+            toa_maps, positions_xy, origins_xy, self.toa_x_min, self.toa_x_max
         )
-        y_norm = (
-            2.0 * (local_xy[:, 1] - self.toa_y_min) / (self.toa_y_max - self.toa_y_min)
-            - 1.0
-        )
-        sample_grid = torch.stack((x_norm, y_norm), dim=-1).view(-1, 1, 1, 2)
-        sampled_toa = F.grid_sample(
-            toa_maps.unsqueeze(1),
-            sample_grid,
-            mode="bilinear",
-            padding_mode="border",
-            align_corners=True,
-        )
-        return sampled_toa[:, 0, 0, 0]
 
     def _compute_toa_gradient(self, positions_xy: torch.Tensor) -> torch.Tensor:
         """Compute TOA map gradient in world XY at given positions."""
-        dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
-        delta = torch.tensor([dx, 0.0], device=self.device, dtype=positions_xy.dtype)
-        delta_y = torch.tensor([0.0, dx], device=self.device, dtype=positions_xy.dtype)
-
-        origins_xy = self.scene.env_origins[:, :2]
-
-        toa_xp = self._sample_toa_from_maps(
-            self.toa_maps, positions_xy + delta, origins_xy
+        return TOA.compute_toa_gradient(
+            self.toa_maps,
+            positions_xy,
+            self.scene.env_origins[:, :2],
+            self.toa_grid_xs,
+            self.toa_x_min,
+            self.toa_x_max,
+            self.device,
         )
-        toa_xm = self._sample_toa_from_maps(
-            self.toa_maps, positions_xy - delta, origins_xy
-        )
-        toa_yp = self._sample_toa_from_maps(
-            self.toa_maps, positions_xy + delta_y, origins_xy
-        )
-        toa_ym = self._sample_toa_from_maps(
-            self.toa_maps, positions_xy - delta_y, origins_xy
-        )
-
-        grad_x = (toa_xp - toa_xm) / (2.0 * dx)
-        grad_y = (toa_yp - toa_ym) / (2.0 * dx)
-        return torch.stack([grad_x, grad_y], dim=-1)
 
     def _update_toa_cache(self, env_ids: torch.Tensor) -> None:
         if env_ids is None or len(env_ids) == 0:
@@ -285,7 +190,7 @@ class TutorialEnv(DirectRLEnv):
                         .numpy()
                     )
                     dynamic_obstacles.append(
-                        _circle_obstacle_to_rect(
+                        TOA.circle_obstacle_to_rect(
                             (float(obs_xy_local[0]), float(obs_xy_local[1])),
                             float(obs_radius.item()),
                         )
@@ -297,8 +202,8 @@ class TutorialEnv(DirectRLEnv):
                 .cpu()
                 .numpy()
             )
-            toa_obstacles = list(maze_obstacles) + dynamic_obstacles
-            toa_map = _build_toa_map(
+            toa_obstacles = list(maze_obstacles)
+            toa_map = TOA.build_toa_map(
                 goal_xy=goal_xy,
                 grid_xs=self.toa_grid_xs,
                 grid_ys=self.toa_grid_ys,
@@ -365,6 +270,46 @@ class TutorialEnv(DirectRLEnv):
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         # print("_pre_physics_step")
         self.actions = actions.clone()
+
+        # Save TOA map periodically
+        self.step_count += 1
+        if self.step_count % self.toa_save_interval == 0:
+            self._save_first_env_toa()
+
+    def _save_first_env_toa(self):
+        """Save the TOA map of the first environment as an image."""
+        if not hasattr(self, "toa_maps"):
+            return
+
+        toa_map = self.toa_maps[0].detach().cpu().numpy()
+        plt.figure(figsize=(8, 6))
+        plt.imshow(
+            toa_map,
+            extent=[self.toa_x_min, self.toa_x_max, self.toa_y_min, self.toa_y_max],
+            origin="lower",
+        )
+
+        # 标记第一个环境的目标位置 (相对于环境原点的局部坐标)
+        goal_xy = (
+            (self.target_pos[0, :2] - self.scene.env_origins[0, :2])
+            .detach()
+            .cpu()
+            .numpy()
+        )
+        plt.plot(goal_xy[0], goal_xy[1], "r*", markersize=15, label="Goal")
+
+        plt.colorbar(label="Time of Arrival")
+        plt.title(f"TOA Map - Step {self.step_count}")
+        plt.xlabel("X (m)")
+        plt.ylabel("Y (m)")
+        plt.legend()
+
+        save_path = os.path.join(
+            self.toa_output_dir, f"toa_step_{self.step_count:06d}.png"
+        )
+        plt.savefig(save_path)
+        plt.close()
+        # print(f"Saved TOA map to {save_path}")
 
     def _apply_action(self) -> None:
         # 1. 获取当前状态
@@ -805,7 +750,6 @@ class TutorialEnv(DirectRLEnv):
         self._corner_diagonal_reset_positions(env_ids)
 
         self._update_toa_cache(env_ids)
-        self.toa_cache_initialized = True
 
         # create markers if necessary for the first time
         # set their visibility to true

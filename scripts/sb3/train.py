@@ -325,7 +325,7 @@ def main(
                 ),
                 "agent_cfg": agent_cfg,
             },
-            sync_tensorboard=False,
+            sync_tensorboard=True,
             dir=os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")),
             save_code=True,
         )
@@ -347,7 +347,9 @@ def main(
     if args_cli.wandb:
         callbacks.extend(
             [
-                WandbCallback(verbose=2),
+                WandbCallback(
+                    verbose=2,
+                ),
                 ToaVisualizationCallback(log_freq=args_cli.log_interval, verbose=1),
             ]
         )
