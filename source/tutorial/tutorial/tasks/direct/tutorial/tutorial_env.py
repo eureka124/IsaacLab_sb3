@@ -122,11 +122,14 @@ class TutorialEnv(DirectRLEnv):
         self.prev_toa = torch.zeros(self.num_envs, device=self.device)
 
         # TOA Map Saving
-        self.toa_save_interval = 1000  # steps
+        self.toa_save_interval = 100  # steps
         self.step_count = 0
         self.toa_output_dir = os.path.join(os.getcwd(), "outputs", "toa_maps")
+        self.toa_grad_output_dir = os.path.join(os.getcwd(), "outputs", "toa_gradients")
         if not os.path.exists(self.toa_output_dir):
             os.makedirs(self.toa_output_dir)
+        if not os.path.exists(self.toa_grad_output_dir):
+            os.makedirs(self.toa_grad_output_dir)
 
         # Collect obstacles from scene
         self.obstacles = []
@@ -148,6 +151,41 @@ class TutorialEnv(DirectRLEnv):
         else:
             self.obstacle_radii_tensor = torch.zeros((0,), device=self.device)
 
+        # Precompute TOA maps for 4 corners
+        self._precompute_corner_toa_maps()
+
+    def _precompute_corner_toa_maps(self) -> None:
+        """Precompute TOA maps for the 4 cardinal goal positions."""
+        # Target coordinates local to environment origin: (15,0), (0,15), (-15,0), (0,-15)
+        self.corner_coords = np.array(
+            [
+                [15.0, 0.0],
+                [0.0, 15.0],
+                [-15.0, 0.0],
+                [0.0, -15.0],
+            ],
+            dtype=np.float32,
+        )
+
+        self.precomputed_toa_maps = torch.zeros(
+            (4, self.toa_grid_size, self.toa_grid_size),
+            device=self.device,
+        )
+
+        from .tutorial_env_cfg import maze_obstacles
+
+        for i, goal_xy in enumerate(self.corner_coords):
+            toa_map = TOA.build_toa_map(
+                goal_xy=goal_xy,
+                grid_xs=self.toa_grid_xs,
+                grid_ys=self.toa_grid_ys,
+                obstacles=maze_obstacles,  # Static maze only
+                robot_radius=self.toa_robot_radius,
+                safe_distance=self.toa_safe_distance,
+                slow_speed=self.toa_slow_speed,
+            )
+            self.precomputed_toa_maps[i] = torch.from_numpy(toa_map).to(self.device)
+
     def _sample_toa_from_maps(
         self,
         toa_maps: torch.Tensor,
@@ -155,7 +193,13 @@ class TutorialEnv(DirectRLEnv):
         origins_xy: torch.Tensor,
     ) -> torch.Tensor:
         return TOA.sample_toa_from_maps(
-            toa_maps, positions_xy, origins_xy, self.toa_x_min, self.toa_x_max
+            toa_maps,
+            positions_xy,
+            origins_xy,
+            self.toa_x_min,
+            self.toa_x_max,
+            self.toa_y_min,
+            self.toa_y_max,
         )
 
     def _compute_toa_gradient(self, positions_xy: torch.Tensor) -> torch.Tensor:
@@ -167,6 +211,8 @@ class TutorialEnv(DirectRLEnv):
             self.toa_grid_xs,
             self.toa_x_min,
             self.toa_x_max,
+            self.toa_y_min,
+            self.toa_y_max,
             self.device,
         )
 
@@ -174,45 +220,21 @@ class TutorialEnv(DirectRLEnv):
         if env_ids is None or len(env_ids) == 0:
             return
 
-        for env_id in env_ids.tolist():
-            dynamic_obstacles: list[
-                tuple[tuple[float, float, float], tuple[float, float, float]]
-            ] = []
-            if len(self.obstacles) > 0:
-                env_origin_xy = self.scene.env_origins[env_id, :2]
-                for obs_obj, obs_radius in zip(
-                    self.obstacles, self.obstacle_radii_tensor
-                ):
-                    obs_xy_local = (
-                        (obs_obj.data.root_pos_w[env_id, :2] - env_origin_xy)
-                        .detach()
-                        .cpu()
-                        .numpy()
-                    )
-                    dynamic_obstacles.append(
-                        TOA.circle_obstacle_to_rect(
-                            (float(obs_xy_local[0]), float(obs_xy_local[1])),
-                            float(obs_radius.item()),
-                        )
-                    )
+        # Use precomputed maps by finding the closest corner for each target
+        target_local = (
+            self.target_pos[env_ids, :2] - self.scene.env_origins[env_ids, :2]
+        )
 
-            goal_xy = (
-                (self.target_pos[env_id, :2] - self.scene.env_origins[env_id, :2])
-                .detach()
-                .cpu()
-                .numpy()
-            )
-            toa_obstacles = list(maze_obstacles)
-            toa_map = TOA.build_toa_map(
-                goal_xy=goal_xy,
-                grid_xs=self.toa_grid_xs,
-                grid_ys=self.toa_grid_ys,
-                obstacles=toa_obstacles,
-                robot_radius=self.toa_robot_radius,
-                safe_distance=self.toa_safe_distance,
-                slow_speed=self.toa_slow_speed,
-            )
-            self.toa_maps[env_id] = torch.from_numpy(toa_map).to(self.device)
+        # Compute distance from each target to the 4 corners
+        # corner_coords: (4, 2), target_local: (N, 2)
+        dist = torch.norm(
+            target_local.unsqueeze(1)
+            - torch.from_numpy(self.corner_coords).to(self.device).unsqueeze(0),
+            dim=-1,
+        )
+        corner_indices = torch.argmin(dist, dim=-1)  # (N,)
+
+        self.toa_maps[env_ids] = self.precomputed_toa_maps[corner_indices]
 
         self.prev_toa[env_ids] = self._sample_toa_from_maps(
             self.toa_maps[env_ids],
@@ -271,22 +293,27 @@ class TutorialEnv(DirectRLEnv):
         # print("_pre_physics_step")
         self.actions = actions.clone()
 
-        # Save TOA map periodically
-        self.step_count += 1
-        if self.step_count % self.toa_save_interval == 0:
-            self._save_first_env_toa()
+        # # Save TOA map periodically
+        # self.step_count += 1
+        # if self.step_count % self.toa_save_interval == 0:
+        #     self._save_first_env_toa()
+        #     self._save_first_env_toa_gradient()
 
     def _save_first_env_toa(self):
         """Save the TOA map of the first environment as an image."""
         if not hasattr(self, "toa_maps"):
             return
 
+        # 获取地图并转置以匹配 (X, Y) 到 (Row, Col) 的 imshow 默认映射
+        # 或者使用 origin='lower' 并确保 extent 正确
         toa_map = self.toa_maps[0].detach().cpu().numpy()
         plt.figure(figsize=(8, 6))
+        # skfmm 返回的 grid 索引通常是 [y, x]，所以转置一下
         plt.imshow(
-            toa_map,
+            toa_map.T,
             extent=[self.toa_x_min, self.toa_x_max, self.toa_y_min, self.toa_y_max],
             origin="lower",
+            cmap="viridis_r",  # 使用反向色图，较小值（目标）显示为深色，障碍物/远端显示为浅色
         )
 
         # 标记第一个环境的目标位置 (相对于环境原点的局部坐标)
@@ -298,11 +325,37 @@ class TutorialEnv(DirectRLEnv):
         )
         plt.plot(goal_xy[0], goal_xy[1], "r*", markersize=15, label="Goal")
 
+        # 标记机器人当前位置
+        robot_xy = (
+            (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2])
+            .detach()
+            .cpu()
+            .numpy()
+        )
+        plt.plot(robot_xy[0], robot_xy[1], "bo", markersize=10, label="Robot")
+
+        # 绘制迷宫墙壁 (maze_obstacles)
+        from matplotlib.patches import Rectangle
+
+        for pos, size in maze_obstacles:
+            left = pos[0] - size[0] / 2.0
+            bottom = pos[1] - size[1] / 2.0
+            rect = Rectangle(
+                (left, bottom),
+                size[0],
+                size[1],
+                linewidth=1,
+                edgecolor="black",
+                facecolor="gray",
+                alpha=0.5,
+            )
+            plt.gca().add_patch(rect)
+
         plt.colorbar(label="Time of Arrival")
         plt.title(f"TOA Map - Step {self.step_count}")
         plt.xlabel("X (m)")
         plt.ylabel("Y (m)")
-        plt.legend()
+        # plt.legend()
 
         save_path = os.path.join(
             self.toa_output_dir, f"toa_step_{self.step_count:06d}.png"
@@ -310,6 +363,136 @@ class TutorialEnv(DirectRLEnv):
         plt.savefig(save_path)
         plt.close()
         # print(f"Saved TOA map to {save_path}")
+
+    def _save_first_env_toa_gradient(self):
+        """Save the TOA gradient field of the first environment as a quiver plot."""
+        if not hasattr(self, "toa_maps"):
+            return
+
+        # 1. 准备全局网格点 (世界系 X, Y)
+        # 降采样以避免箭头过密，例如每 3 个点取一个
+        stride = 3
+        grid_xs_sampled = self.toa_grid_xs[::stride]
+        grid_ys_sampled = self.toa_grid_ys[::stride]
+
+        # 生成世界坐标网格
+        X_local, Y_local = np.meshgrid(grid_xs_sampled, grid_ys_sampled, indexing="xy")
+        origin_xy = self.scene.env_origins[0, :2].unsqueeze(0)  # (1, 2)
+
+        # 将局部网格点转换为世界坐标以便传入 _compute_toa_gradient
+        X_world = X_local + origin_xy[0, 0].item()
+        Y_world = Y_local + origin_xy[0, 1].item()
+
+        points_world = torch.stack(
+            [
+                torch.from_numpy(X_world).to(self.device).flatten(),
+                torch.from_numpy(Y_world).to(self.device).flatten(),
+            ],
+            dim=-1,
+        )  # (N, 2)
+
+        # 2. 计算梯度 (使用现有的类方法，它会调用 TOA.compute_toa_gradient)
+        # 注意：这里需要修改 _compute_toa_gradient 或直接调用 TOA 里的函数来支持大批量点
+        # 现有的 _compute_toa_gradient 使用 self.toa_maps (全环境) 和 env_origins
+        # 我们这里只需要 env 0 的梯度
+        dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
+
+        # 直接使用 TOA 模块工具计算 env 0 的梯度分布
+        # 为了高效，我们只处理 env 0 的地图
+        env0_map = self.toa_maps[0:1]  # (1, H, W)
+        env0_origin = self.scene.env_origins[0:1, :2]  # (1, 2)
+
+        # 批量重复 env_origins 以匹配 points_world 的数量
+        points_batch = points_world  # (N, 2)
+        origins_batch = env0_origin.expand(points_world.shape[0], -1)  # (N, 2)
+
+        # 梯度是指向值增加最快的方向，导航通常需要 -grad
+        grad = TOA.compute_toa_gradient(
+            env0_map.expand(points_world.shape[0], -1, -1),
+            points_batch,
+            origins_batch,
+            self.toa_grid_xs,
+            self.toa_x_min,
+            self.toa_x_max,
+            self.toa_y_min,
+            self.toa_y_max,
+            self.device,
+        )  # (N, 2)
+
+        grad_np = grad.detach().cpu().numpy()
+        U = grad_np[:, 0].reshape(X_local.shape)
+        V = grad_np[:, 1].reshape(Y_local.shape)
+
+        # 3. 绘图
+        plt.figure(figsize=(10, 10))
+        # 背景画出 TOA 地图
+        toa_map = self.toa_maps[0].detach().cpu().numpy()
+        plt.imshow(
+            toa_map.T,
+            extent=[self.toa_x_min, self.toa_x_max, self.toa_y_min, self.toa_y_max],
+            origin="lower",
+            cmap="viridis_r",
+            alpha=0.3,
+        )
+
+        # 画出梯度矢量场 (通常画 -grad，即指向目标的方向)
+        plt.quiver(
+            X_local,
+            Y_local,
+            -U,
+            -V,
+            color="g",
+            scale=80,
+            width=0.002,
+            label="-Gradient (to Goal)",
+        )
+
+        # 标记目标和机器人
+        goal_xy = (
+            (self.target_pos[0, :2] - self.scene.env_origins[0, :2])
+            .detach()
+            .cpu()
+            .numpy()
+        )
+        plt.plot(goal_xy[0], goal_xy[1], "r*", markersize=15, label="Goal")
+
+        robot_xy = (
+            (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2])
+            .detach()
+            .cpu()
+            .numpy()
+        )
+        plt.plot(robot_xy[0], robot_xy[1], "bo", markersize=10, label="Robot")
+
+        # 4. 绘制迷宫墙壁 (maze_obstacles)
+        from matplotlib.patches import Rectangle
+
+        for pos, size in maze_obstacles:
+            # pos 是中心点 (x, y, z)，size 是 (sx, sy, sz)
+            # 计算左下角坐标
+            left = pos[0] - size[0] / 2.0
+            bottom = pos[1] - size[1] / 2.0
+            rect = Rectangle(
+                (left, bottom),
+                size[0],
+                size[1],
+                linewidth=1,
+                edgecolor="black",
+                facecolor="gray",
+                alpha=0.5,
+            )
+            plt.gca().add_patch(rect)
+
+        plt.title(f"TOA Gradient Field (-grad) - Step {self.step_count}")
+        plt.xlabel("X (m)")
+        plt.ylabel("Y (m)")
+        # plt.legend()
+
+        save_path = os.path.join(
+            self.toa_grad_output_dir, f"toa_grad_step_{self.step_count:06d}.png"
+        )
+        plt.savefig(save_path)
+        plt.close()
 
     def _apply_action(self) -> None:
         # 1. 获取当前状态
@@ -1006,26 +1189,23 @@ class TutorialEnv(DirectRLEnv):
                     obs_defaults[:, 7:], env_ids
                 )
 
-        # 2. 无人机起点为四个角之一，目标为对角角点
-        corner_limit = self.env_spacing / 2.0 - 1.0
-        corners_xy = torch.tensor(
+        # 2. 无人机中心点 (0,0)，目标为 (15,0), (0,15), (-15,0), (0,-15) 之一
+        goals_xy = torch.tensor(
             [
-                [-corner_limit, -corner_limit],
-                [-corner_limit, corner_limit],
-                [corner_limit, -corner_limit],
-                [corner_limit, corner_limit],
+                [15.0, 0.0],
+                [0.0, 15.0],
+                [-15.0, 0.0],
+                [0.0, -15.0],
             ],
             device=self.device,
             dtype=default_root_state.dtype,
         )
-        corner_idx = torch.randint(0, 4, (len_env_ids,), device=self.device)
-        # 对角映射: 0<->3, 1<->2
-        diagonal_idx = 3 - corner_idx
+        goal_idx = torch.randint(0, 4, (len_env_ids,), device=self.device)
+        goal_xy = goals_xy[goal_idx]
 
         start_xy = torch.zeros(
             (len_env_ids, 2), device=self.device, dtype=default_root_state.dtype
         )
-        goal_xy = corners_xy[diagonal_idx]
 
         default_root_state[:, 0] = start_xy[:, 0] + self.scene.env_origins[env_ids, 0]
         default_root_state[:, 1] = start_xy[:, 1] + self.scene.env_origins[env_ids, 1]

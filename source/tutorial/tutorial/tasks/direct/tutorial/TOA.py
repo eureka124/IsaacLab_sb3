@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import numpy as np
 import skfmm
 
+
 def _rectangle_sdf(
     grid_x: np.ndarray,
     grid_y: np.ndarray,
@@ -31,7 +32,7 @@ def build_toa_map(
     slow_speed: float,
 ) -> np.ndarray:
     grid_x, grid_y = np.meshgrid(grid_xs, grid_ys, indexing="xy")
-    obstacle_sdf = np.full_like(grid_x, np.inf, dtype=np.float32)
+    obstacle_sdf = np.full_like(grid_x, 1e6, dtype=np.float32)
 
     for obstacle_pos, obstacle_size in obstacles:
         obstacle_sdf = np.minimum(
@@ -62,9 +63,9 @@ def build_toa_map(
     toa_map = skfmm.travel_time(phi, speed, dx=grid_dx)
 
     if np.ma.isMaskedArray(toa_map):
-        finite_values = toa_map.compressed()
-        fill_value = float(finite_values.max()) if finite_values.size > 0 else 0.0
-        toa_map = toa_map.filled(fill_value)
+        # toa_map.fill_value should be 0 or small for goal, but skfmm returns distance from interface
+        # The masked areas are obstacles, they should have high TOA values
+        toa_map = toa_map.filled(fill_value=1e6)
 
     return np.asarray(toa_map, dtype=np.float32)
 
@@ -76,22 +77,19 @@ def circle_obstacle_to_rect(
     diameter = 2.0 * float(radius)
     return (float(center_xy[0]), float(center_xy[1]), 0.0), (diameter, diameter, 1.0)
 
+
 def sample_toa_from_maps(
     toa_maps: torch.Tensor,
     positions_xy: torch.Tensor,
     origins_xy: torch.Tensor,
     toa_x_min: float,
     toa_x_max: float,
+    toa_y_min: float,
+    toa_y_max: float,
 ) -> torch.Tensor:
     local_xy = positions_xy - origins_xy
-    x_norm = (
-        2.0 * (local_xy[:, 0] - toa_x_min) / (toa_x_max - toa_x_min)
-        - 1.0
-    )
-    y_norm = (
-        2.0 * (local_xy[:, 1] - toa_x_min) / (toa_x_max - toa_x_min)
-        - 1.0
-    )
+    x_norm = 2.0 * (local_xy[:, 0] - toa_x_min) / (toa_x_max - toa_x_min) - 1.0
+    y_norm = 2.0 * (local_xy[:, 1] - toa_y_min) / (toa_y_max - toa_y_min) - 1.0
     sample_grid = torch.stack((x_norm, y_norm), dim=-1).view(-1, 1, 1, 2)
     sampled_toa = F.grid_sample(
         toa_maps.unsqueeze(1),
@@ -102,6 +100,7 @@ def sample_toa_from_maps(
     )
     return sampled_toa[:, 0, 0, 0]
 
+
 def compute_toa_gradient(
     toa_maps: torch.Tensor,
     positions_xy: torch.Tensor,
@@ -109,6 +108,8 @@ def compute_toa_gradient(
     toa_grid_xs: np.ndarray,
     toa_x_min: float,
     toa_x_max: float,
+    toa_y_min: float,
+    toa_y_max: float,
     device: torch.device,
 ) -> torch.Tensor:
     """Compute TOA map gradient in world XY at given positions."""
@@ -117,16 +118,40 @@ def compute_toa_gradient(
     delta_y = torch.tensor([0.0, dx], device=device, dtype=positions_xy.dtype)
 
     toa_xp = sample_toa_from_maps(
-        toa_maps, positions_xy + delta, origins_xy, toa_x_min, toa_x_max
+        toa_maps,
+        positions_xy + delta,
+        origins_xy,
+        toa_x_min,
+        toa_x_max,
+        toa_y_min,
+        toa_y_max,
     )
     toa_xm = sample_toa_from_maps(
-        toa_maps, positions_xy - delta, origins_xy, toa_x_min, toa_x_max
+        toa_maps,
+        positions_xy - delta,
+        origins_xy,
+        toa_x_min,
+        toa_x_max,
+        toa_y_min,
+        toa_y_max,
     )
     toa_yp = sample_toa_from_maps(
-        toa_maps, positions_xy + delta_y, origins_xy, toa_x_min, toa_x_max
+        toa_maps,
+        positions_xy + delta_y,
+        origins_xy,
+        toa_x_min,
+        toa_x_max,
+        toa_y_min,
+        toa_y_max,
     )
     toa_ym = sample_toa_from_maps(
-        toa_maps, positions_xy - delta_y, origins_xy, toa_x_min, toa_x_max
+        toa_maps,
+        positions_xy - delta_y,
+        origins_xy,
+        toa_x_min,
+        toa_x_max,
+        toa_y_min,
+        toa_y_max,
     )
 
     grad_x = (toa_xp - toa_xm) / (2.0 * dx)

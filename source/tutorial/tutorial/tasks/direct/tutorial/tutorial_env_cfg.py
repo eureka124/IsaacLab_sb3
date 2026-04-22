@@ -49,7 +49,7 @@ class MySceneCfg(InteractiveSceneCfg):
     floor = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Floor",
         spawn=sim_utils.CuboidCfg(
-            size=(40.0, 40.0, 0.1),
+            size=(30.0, 30.0, 0.1),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=True,
@@ -82,14 +82,14 @@ class MySceneCfg(InteractiveSceneCfg):
 # 这里仅作为一个示例迷宫布局，你可以根据需要调整位置
 maze_obstacles = [
     # ((x, y, z), (sx, sy, sz))
-    ((-7.0, -12.0, 2.0), (10.0, 0.5, 4.0)),
-    ((-12.0, -7.0, 2.0), (0.5, 10.0, 4.0)),
-    ((7.0, -12.0, 2.0), (10.0, 0.5, 4.0)),
-    ((12.0, -7.0, 2.0), (0.5, 10.0, 4.0)),
-    ((-7.0, 12.0, 2.0), (10.0, 0.5, 4.0)),
-    ((-12.0, 7.0, 2.0), (0.5, 10.0, 4.0)),
-    ((7.0, 12.0, 2.0), (10.0, 0.5, 4.0)),
-    ((12.0, 7.0, 2.0), (0.5, 10.0, 4.0)),
+    ((-7.5, -12.0, 2.0), (10.0, 1, 4.0)),
+    ((-12.0, -6.5, 2.0), (1, 10.0, 4.0)),
+    ((7.5, -12.0, 2.0), (10.0, 1, 4.0)),
+    ((12.0, -6.5, 2.0), (1, 10.0, 4.0)),
+    ((-6.5, 12.0, 2.0), (10.0, 1, 4.0)),
+    ((-12.0, 7.5, 2.0), (1, 10.0, 4.0)),
+    ((6.5, 12.0, 2.0), (10.0, 1, 4.0)),
+    ((12.0, 7.5, 2.0), (1, 10.0, 4.0)),
 ]
 
 for i, (pos, size) in enumerate(maze_obstacles):
@@ -221,5 +221,5 @@ class TutorialEnvCfg(DirectRLEnvCfg):
 
     # scene
     scene: InteractiveSceneCfg = MySceneCfg(
-        num_envs=4, env_spacing=40.0, replicate_physics=True
+        num_envs=4, env_spacing=30.0, replicate_physics=True
     )
