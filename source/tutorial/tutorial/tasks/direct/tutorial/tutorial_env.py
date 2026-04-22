@@ -155,14 +155,14 @@ class TutorialEnv(DirectRLEnv):
         self._precompute_corner_toa_maps()
 
     def _precompute_corner_toa_maps(self) -> None:
-        """Precompute TOA maps for the 4 cardinal goal positions."""
-        # Target coordinates local to environment origin: (15,0), (0,15), (-15,0), (0,-15)
+        """Precompute TOA maps for the 4 corner goal positions."""
+        # Target coordinates local to environment origin: (15,15), (-15,15), (-15,-15), (15,-15)
         self.corner_coords = np.array(
             [
-                [15.0, 0.0],
-                [0.0, 15.0],
-                [-15.0, 0.0],
-                [0.0, -15.0],
+                [15.0, 15.0],
+                [-15.0, 15.0],
+                [-15.0, -15.0],
+                [15.0, -15.0],
             ],
             dtype=np.float32,
         )
@@ -1189,13 +1189,13 @@ class TutorialEnv(DirectRLEnv):
                     obs_defaults[:, 7:], env_ids
                 )
 
-        # 2. 无人机中心点 (0,0)，目标为 (15,0), (0,15), (-15,0), (0,-15) 之一
+        # 2. 无人机中心点 (0,0)，目标为 (15,15), (-15,15), (-15,-15), (15,-15) 之一
         goals_xy = torch.tensor(
             [
-                [15.0, 0.0],
-                [0.0, 15.0],
-                [-15.0, 0.0],
-                [0.0, -15.0],
+                [15.0, 15.0],
+                [-15.0, 15.0],
+                [-15.0, -15.0],
+                [15.0, -15.0],
             ],
             device=self.device,
             dtype=default_root_state.dtype,
@@ -1337,13 +1337,14 @@ def compute_rewards(
     penalty_obstacle: torch.Tensor,
     penalty_yaw: torch.Tensor,
 ):
-    total_reward = reward_toa * 100.0
+    total_reward = reward_toa * 1.0
+    total_reward = total_reward - penalty_yaw * 1.0
     # total_reward = total_reward + reward_velocity * 0.5
     # total_reward = total_reward - penalty_obstacle
     total_reward = total_reward - penalty_smooth * 0.1
     total_reward = total_reward - collided * 200.0
     total_reward = total_reward + arrived * 300.0
-    total_reward = total_reward - penalty_yaw
+
     # print("Reward Velocity:", reward_velocity)
     # print("Reward TOA:", reward_toa)
     # print("Penalty Smooth:", penalty_smooth)
