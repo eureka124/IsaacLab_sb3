@@ -203,8 +203,8 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     episode_length_s = 40  # 导航任务最长时间40s
 
     action_space = spaces.Box(
-        low=np.array([-0.1, -0.5, -np.pi], dtype=np.float32),  # 每个维度的最小值
-        high=np.array([2.0, 0.5, np.pi], dtype=np.float32),  # 每个维度的最大值
+        low=np.array([-0.1, -0.5, -np.pi / 3], dtype=np.float32),  # 每个维度的最小值
+        high=np.array([2.0, 0.5, np.pi / 3], dtype=np.float32),  # 每个维度的最大值
         shape=(3,),  # 动作空间的形状，3表示三个连续动作
         dtype=np.float32,
     )  # 连续动作空间，表示机器人的线速度(vx, vy)和偏航角速度(yaw_rate)
