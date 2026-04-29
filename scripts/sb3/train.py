@@ -148,7 +148,7 @@ sys.path.append(
         "../../source/tutorial/tutorial/tasks/direct/tutorial/agents",
     )
 )
-from custom_extractor import CustomCombinedExtractor, GodViewExtractor
+from custom_extractor import CustomCombinedExtractor, GodViewExtractor, ActorFeaturesExtractor, CriticFeaturesExtractor
 from custom_callback import (
     IsaacLogCallback,
     CheckpointCallbackWithLimit,
@@ -276,6 +276,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         policy_kwargs["features_extractor_class"] = GodViewExtractor
     else:
         policy_kwargs["features_extractor_class"] = CustomCombinedExtractor
+        policy_kwargs["critic_features_extractor_class"] = CriticFeaturesExtractor
+        policy_kwargs["actor_features_extractor_class"] = ActorFeaturesExtractor
     agent_cfg["policy_kwargs"] = policy_kwargs
 
     agent = RecurrentPPO(policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg)
