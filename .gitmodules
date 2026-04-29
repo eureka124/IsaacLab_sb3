@@ -1,0 +1,6 @@
+[submodule "source/thirdparty/stable-baselines3"]
+	path = source/thirdparty/stable-baselines3
+	url = git@github.com:eureka124/stable-baselines3
+[submodule "source/thirdparty/stable-baselines3-contrib"]
+	path = source/thirdparty/stable-baselines3-contrib
+	url = git@github.com:eureka124/stable-baselines3-contrib
