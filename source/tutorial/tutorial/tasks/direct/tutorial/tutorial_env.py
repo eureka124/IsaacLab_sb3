@@ -29,13 +29,10 @@ class TutorialEnv(DirectRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
 
         # Update the observation space for camera to be uint8 [0, 255]
-        if (
-            isinstance(self.observation_space, gym.spaces.Dict)
-            and "camera" in self.observation_space.spaces
-        ):
+        if isinstance(self.observation_space, gym.spaces.Dict) and "camera" in self.observation_space.spaces:
             self.observation_space.spaces["camera"] = gym.spaces.Box(
-                low=-1,
-                high=1,
+                low=0.0,
+                high=1.0,
                 shape=self.observation_space.spaces["camera"].shape,
                 dtype=np.float32,
             )
@@ -76,16 +73,12 @@ class TutorialEnv(DirectRLEnv):
                 "max_rotation_velocities": [838, 838, 838, 838],
             },
         }
-        self.controller = LeePositionController(g=9.81, uav_params=uav_params).to(
-            self.device
-        )
+        self.controller = LeePositionController(g=9.81, uav_params=uav_params).to(self.device)
         self.mixer_pinv = torch.linalg.pinv(self.controller.mixer)
         self.target_pos_setpoint = torch.zeros((self.num_envs, 3), device=self.device)
         self.target_yaw_setpoint = torch.zeros((self.num_envs, 1), device=self.device)
         # [超时次数, 碰撞次数, 到达次数]
-        self.success_rate_count = torch.zeros(
-            3, dtype=torch.float32, device=self.device
-        )
+        self.success_rate_count = torch.zeros(3, dtype=torch.float32, device=self.device)
         self.total_episodes = 0
 
         # Grid management
@@ -145,9 +138,7 @@ class TutorialEnv(DirectRLEnv):
                 self.obstacle_radii.append(obs.cfg.spawn.radius)
 
         if self.obstacles:
-            self.obstacle_radii_tensor = torch.tensor(
-                self.obstacle_radii, device=self.device
-            )
+            self.obstacle_radii_tensor = torch.tensor(self.obstacle_radii, device=self.device)
         else:
             self.obstacle_radii_tensor = torch.zeros((0,), device=self.device)
 
@@ -221,15 +212,12 @@ class TutorialEnv(DirectRLEnv):
             return
 
         # Use precomputed maps by finding the closest corner for each target
-        target_local = (
-            self.target_pos[env_ids, :2] - self.scene.env_origins[env_ids, :2]
-        )
+        target_local = self.target_pos[env_ids, :2] - self.scene.env_origins[env_ids, :2]
 
         # Compute distance from each target to the 4 corners
         # corner_coords: (4, 2), target_local: (N, 2)
         dist = torch.norm(
-            target_local.unsqueeze(1)
-            - torch.from_numpy(self.corner_coords).to(self.device).unsqueeze(0),
+            target_local.unsqueeze(1) - torch.from_numpy(self.corner_coords).to(self.device).unsqueeze(0),
             dim=-1,
         )
         corner_indices = torch.argmin(dist, dim=-1)  # (N,)
@@ -317,21 +305,11 @@ class TutorialEnv(DirectRLEnv):
         )
 
         # 标记第一个环境的目标位置 (相对于环境原点的局部坐标)
-        goal_xy = (
-            (self.target_pos[0, :2] - self.scene.env_origins[0, :2])
-            .detach()
-            .cpu()
-            .numpy()
-        )
+        goal_xy = (self.target_pos[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
         plt.plot(goal_xy[0], goal_xy[1], "r*", markersize=15, label="Goal")
 
         # 标记机器人当前位置
-        robot_xy = (
-            (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2])
-            .detach()
-            .cpu()
-            .numpy()
-        )
+        robot_xy = (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
         plt.plot(robot_xy[0], robot_xy[1], "bo", markersize=10, label="Robot")
 
         # 绘制迷宫墙壁 (maze_obstacles)
@@ -357,9 +335,7 @@ class TutorialEnv(DirectRLEnv):
         plt.ylabel("Y (m)")
         # plt.legend()
 
-        save_path = os.path.join(
-            self.toa_output_dir, f"toa_step_{self.step_count:06d}.png"
-        )
+        save_path = os.path.join(self.toa_output_dir, f"toa_step_{self.step_count:06d}.png")
         plt.savefig(save_path)
         plt.close()
         # print(f"Saved TOA map to {save_path}")
@@ -448,20 +424,10 @@ class TutorialEnv(DirectRLEnv):
         )
 
         # 标记目标和机器人
-        goal_xy = (
-            (self.target_pos[0, :2] - self.scene.env_origins[0, :2])
-            .detach()
-            .cpu()
-            .numpy()
-        )
+        goal_xy = (self.target_pos[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
         plt.plot(goal_xy[0], goal_xy[1], "r*", markersize=15, label="Goal")
 
-        robot_xy = (
-            (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2])
-            .detach()
-            .cpu()
-            .numpy()
-        )
+        robot_xy = (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
         plt.plot(robot_xy[0], robot_xy[1], "bo", markersize=10, label="Robot")
 
         # 4. 绘制迷宫墙壁 (maze_obstacles)
@@ -488,9 +454,7 @@ class TutorialEnv(DirectRLEnv):
         plt.ylabel("Y (m)")
         # plt.legend()
 
-        save_path = os.path.join(
-            self.toa_grad_output_dir, f"toa_grad_step_{self.step_count:06d}.png"
-        )
+        save_path = os.path.join(self.toa_grad_output_dir, f"toa_grad_step_{self.step_count:06d}.png")
         plt.savefig(save_path)
         plt.close()
 
@@ -506,12 +470,8 @@ class TutorialEnv(DirectRLEnv):
         # 前向向量 (机体系 x 轴在世界系下的投影)
         forward_x = w * w + x * x - y * y - z * z
         forward_y = 2 * (x * y + w * z)
-        forward_direction = torch.stack(
-            (forward_x, forward_y, torch.zeros_like(forward_y)), dim=-1
-        )
-        forward_direction = forward_direction / (
-            torch.norm(forward_direction, dim=-1, keepdim=True) + 1e-6
-        )
+        forward_direction = torch.stack((forward_x, forward_y, torch.zeros_like(forward_y)), dim=-1)
+        forward_direction = forward_direction / (torch.norm(forward_direction, dim=-1, keepdim=True) + 1e-6)
         # 侧向向量 (机体系 y 轴在世界系下的投影，简化为水平面内与前向垂直)
         side_direction = torch.stack(
             (
@@ -524,18 +484,13 @@ class TutorialEnv(DirectRLEnv):
 
         # 3. 构造控制目标
         # actions[:, 0] 是vx, actions[:, 1] vy, actions[:, 2] 是 yaw_rate
-        target_vel_xy = (
-            forward_direction[:, :2] * self.actions[:, 0:1]
-            + side_direction[:, :2] * self.actions[:, 1:2]
-        )
+        target_vel_xy = forward_direction[:, :2] * self.actions[:, 0:1] + side_direction[:, :2] * self.actions[:, 1:2]
 
         # 更新偏航角目标
         target_yaw_rate = self.actions[:, 2:3]
         self.target_yaw_setpoint += target_yaw_rate * self.cfg.sim.dt
         # 限制在 -pi 到 pi 之间
-        self.target_yaw_setpoint = (self.target_yaw_setpoint + torch.pi) % (
-            2 * torch.pi
-        ) - torch.pi
+        self.target_yaw_setpoint = (self.target_yaw_setpoint + torch.pi) % (2 * torch.pi) - torch.pi
 
         # 高度控制交给 Lee 控制器：设置目标高度为 2.0，目标垂直速度为 0
         target_z = 2.0
@@ -570,9 +525,7 @@ class TutorialEnv(DirectRLEnv):
 
         torques_local = torques.unsqueeze(1)
 
-        self.robot.set_external_force_and_torque(
-            forces_local, torques_local, body_ids=[0], is_global=False
-        )
+        self.robot.set_external_force_and_torque(forces_local, torques_local, body_ids=[0], is_global=False)
 
         self._update_velocity_arrow()
 
@@ -618,9 +571,7 @@ class TutorialEnv(DirectRLEnv):
         self.vel_arrow_visualizer.visualize(pos, quat, scales=scales)
 
     def _get_norm_depth_image(self) -> torch.Tensor:
-        depth_frame = (
-            self.scene["camera"].data.output["distance_to_image_plane"].clone()
-        )
+        depth_frame = self.scene["camera"].data.output["distance_to_image_plane"].clone()
 
         # Normalize camera tensor to NCHW before pooling.
         # Common layouts from sensor output are NHWC (last dim = 1) or NHW.
@@ -629,14 +580,10 @@ class TutorialEnv(DirectRLEnv):
         elif depth_frame.dim() == 3:
             depth_frame = depth_frame.unsqueeze(1)
         elif depth_frame.dim() != 4:
-            raise RuntimeError(
-                f"Unexpected raw depth tensor shape: {tuple(depth_frame.shape)}"
-            )
+            raise RuntimeError(f"Unexpected raw depth tensor shape: {tuple(depth_frame.shape)}")
 
         # 最小池化降采样 (kernel_size=4, stride=4) 从 (48, 64) 到 (12, 16)
-        depth_frame = -torch.nn.functional.max_pool2d(
-            -depth_frame, kernel_size=4, stride=4
-        )
+        depth_frame = -torch.nn.functional.max_pool2d(-depth_frame, kernel_size=4, stride=4)
 
         # 归一化深度图
         max_vals = 10.0  # 相机最远探测距离m
@@ -667,9 +614,7 @@ class TutorialEnv(DirectRLEnv):
         robot_quat = self.robot.data.root_quat_w
         diff_global = self.target_pos - robot_pos
         diff_body = quat_rotate_inverse(robot_quat, diff_global)
-        relative_position = diff_body[:, :2].clamp(
-            -5.0, 5.0
-        )  # 目标位置相对于机器人的位置差 (num_envs, 2)，并裁剪到合理范围
+        relative_position = diff_body[:, :2].clamp(-5.0, 5.0)  # 目标位置相对于机器人的位置差 (num_envs, 2)，并裁剪到合理范围
 
         last_action = self.actions
 
@@ -683,16 +628,12 @@ class TutorialEnv(DirectRLEnv):
         ang_vel_b = quat_rotate_inverse(robot_quat, ang_vel_w)
         yaw_rate = ang_vel_b[:, 2:3]
 
-        obs = torch.cat(
-            (relative_position, last_action, vel_xy, yaw_rate), dim=-1
-        )  # shape: (num_envs, 8)
+        obs = torch.cat((relative_position, last_action, vel_xy, yaw_rate), dim=-1)  # shape: (num_envs, 8)
 
         # Calculate privileged information (nearest 5 obstacles)
         if len(self.obstacles) > 0:
             # 1. Gather all obstacle positions: (num_envs, num_obstacles, 3)
-            all_obs_pos_w = torch.stack(
-                [obs.data.root_pos_w for obs in self.obstacles], dim=1
-            )
+            all_obs_pos_w = torch.stack([obs.data.root_pos_w for obs in self.obstacles], dim=1)
             # 2. Robot position: (num_envs, 1, 3)
             robot_pos_w = self.robot.data.root_pos_w.unsqueeze(1)
             # 3. Relative positions in world frame
@@ -705,11 +646,7 @@ class TutorialEnv(DirectRLEnv):
 
             # 6. Gather geometric features
             # Create batch indices for gathering
-            batch_indices = (
-                torch.arange(self.num_envs, device=self.device)
-                .unsqueeze(1)
-                .expand(-1, k)
-            )
+            batch_indices = torch.arange(self.num_envs, device=self.device).unsqueeze(1).expand(-1, k)
             # Gather relative positions: (num_envs, k, 3)
             selected_rel_pos_w = rel_pos_w[batch_indices, indices]
 
@@ -743,6 +680,7 @@ class TutorialEnv(DirectRLEnv):
                 "robot-state": obs,
                 "camera": camera_observation,
                 "critic-state": torch.zeros_like(critic_obs),
+                "critic-toa": torch.clamp(self.toa_maps.unsqueeze(1), 0.0, 255.0) / 255.0,
             },
         }
         # print("Observations:", {k: v for k, v in observations["policy"].items()})
@@ -755,18 +693,10 @@ class TutorialEnv(DirectRLEnv):
         # 获取目标位置和机器人位置，计算方向向量
         target_pos = self.target_pos[:, :2]  # 目标位置 (num_envs, 2)
         robot_pos = self.robot.data.root_pos_w[:, :2]  # 机器人位置 (num_envs, 2)
-        direction_vector = (
-            target_pos - robot_pos
-        )  # 目标点相对机器人的位置 (num_envs, 2)
-        direction_vector = direction_vector / (
-            torch.norm(direction_vector, dim=-1, keepdim=True) + 1e-6
-        )  # 归一化方向向量 (num_envs, 2)
-        linear_velocity = self.robot.data.root_lin_vel_w[
-            :, :2
-        ]  # 线速度 (num_envs, 2) [vx, vy]
-        reward_velocity = torch.sum(
-            linear_velocity * direction_vector, dim=1
-        )  # 速度奖励 (num_envs,)
+        direction_vector = target_pos - robot_pos  # 目标点相对机器人的位置 (num_envs, 2)
+        direction_vector = direction_vector / (torch.norm(direction_vector, dim=-1, keepdim=True) + 1e-6)  # 归一化方向向量 (num_envs, 2)
+        linear_velocity = self.robot.data.root_lin_vel_w[:, :2]  # 线速度 (num_envs, 2) [vx, vy]
+        reward_velocity = torch.sum(linear_velocity * direction_vector, dim=1)  # 速度奖励 (num_envs,)
 
         # 计算动作平滑惩罚
         if not hasattr(self, "prev_actions"):
@@ -777,14 +707,10 @@ class TutorialEnv(DirectRLEnv):
 
         # 计算障碍物距离惩罚
         if len(self.obstacles) > 0:
-            obstacle_pos = torch.stack(
-                [obs.data.root_pos_w[:, :2] for obs in self.obstacles], dim=0
-            )  # (num_obstacles, num_envs, 2)
+            obstacle_pos = torch.stack([obs.data.root_pos_w[:, :2] for obs in self.obstacles], dim=0)  # (num_obstacles, num_envs, 2)
             # 计算机器人到障碍物中心的距离
             # robot_pos: (num_envs, 2) -> unsqueeze(0) -> (1, num_envs, 2)
-            dists = torch.norm(
-                obstacle_pos - robot_pos.unsqueeze(0), dim=-1
-            )  # (num_obstacles, num_envs)
+            dists = torch.norm(obstacle_pos - robot_pos.unsqueeze(0), dim=-1)  # (num_obstacles, num_envs)
 
             # 计算到障碍物表面的距离: 中心距离 - 障碍物半径
             # self.obstacle_radii_tensor: (num_obstacles,) -> unsqueeze(1) -> (num_obstacles, 1)
@@ -887,9 +813,7 @@ class TutorialEnv(DirectRLEnv):
         collided = torch.any(torch.norm(contact_forces, dim=-1) > 1.0, dim=1)
         self.collided = collided
         # 3. 统计信息 (确保在 __init__ 中初始化了这些变量)
-        num_resets = (
-            time_out.sum().item() + collided.sum().item() + arrived.sum().item()
-        )
+        num_resets = time_out.sum().item() + collided.sum().item() + arrived.sum().item()
         self.success_rate_count[0] += time_out.sum().item()
         self.success_rate_count[1] += collided.sum().item()
         self.success_rate_count[2] += arrived.sum().item()
@@ -899,21 +823,15 @@ class TutorialEnv(DirectRLEnv):
         # 每 100 次事件打印一次
         if current_sum > 0 and current_sum % 1000 == 0:
             if not self.last_condition_state:  # 防止同一步重复打印
-                success_rates = (
-                    self.success_rate_count / self.success_rate_count.sum().item() * 100
-                )
-                print(
-                    f"Stats [Timeout, Collision, Arrived]: [{success_rates[0]:.2f}%, {success_rates[1]:.2f}%, {success_rates[2]:.2f}%, total episodes: {self.success_rate_count.sum().item()}]"
-                )
+                success_rates = self.success_rate_count / self.success_rate_count.sum().item() * 100
+                print(f"Stats [Timeout, Collision, Arrived]: [{success_rates[0]:.2f}%, {success_rates[1]:.2f}%, {success_rates[2]:.2f}%, total episodes: {self.success_rate_count.sum().item()}]")
                 self.last_condition_state = True
                 self.success_rate_count[:] = 0
         else:
             self.last_condition_state = False
 
         # 4. 决定重置的环境
-        reset_envs = (
-            arrived | collided | time_out
-        )  # 通常超时也需要重置，除非由外部 runner 处理W
+        reset_envs = arrived | collided | time_out  # 通常超时也需要重置，除非由外部 runner 处理W
 
         # 记录到 extras 中，方便 RL 框架读取
         self.extras["success"] = arrived
@@ -978,35 +896,23 @@ class TutorialEnv(DirectRLEnv):
                 max_offset = (self.cell_size / 2.0) - r
                 max_offset = torch.clamp(max_offset, min=0.0)
 
-                offset_x = (
-                    torch.rand(len_env_ids, device=self.device) * 2 - 1
-                ) * max_offset
-                offset_y = (
-                    torch.rand(len_env_ids, device=self.device) * 2 - 1
-                ) * max_offset
+                offset_x = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * max_offset
+                offset_y = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * max_offset
 
                 obs_x = cx + offset_x
                 obs_y = cy + offset_y
 
-                obs_defaults = (
-                    self.obstacles[k].data.default_root_state[env_ids].clone()
-                )
+                obs_defaults = self.obstacles[k].data.default_root_state[env_ids].clone()
                 obs_defaults[:, 0] = obs_x + self.scene.env_origins[env_ids, 0]
                 obs_defaults[:, 1] = obs_y + self.scene.env_origins[env_ids, 1]
 
                 self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
-                self.obstacles[k].write_root_velocity_to_sim(
-                    obs_defaults[:, 7:], env_ids
-                )
+                self.obstacles[k].write_root_velocity_to_sim(obs_defaults[:, 7:], env_ids)
 
         # Place Robot (Start)
         cx_s, cy_s = get_grid_coords_batch(start_grid_indices)
-        offset_x_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.5
-        )
-        offset_y_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.5
-        )
+        offset_x_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (self.cell_size / 2 - 0.5)
+        offset_y_s = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (self.cell_size / 2 - 0.5)
         start_x = cx_s + offset_x_s
         start_y = cy_s + offset_y_s
 
@@ -1019,12 +925,8 @@ class TutorialEnv(DirectRLEnv):
 
         # Place Target (Goal)
         cx_g, cy_g = get_grid_coords_batch(goal_grid_indices)
-        offset_x_g = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.2
-        )
-        offset_y_g = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (
-            self.cell_size / 2 - 0.2
-        )
+        offset_x_g = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (self.cell_size / 2 - 0.2)
+        offset_y_g = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * (self.cell_size / 2 - 0.2)
         target_x = cx_g + offset_x_g
         target_y = cy_g + offset_y_g
         target_z = torch.ones_like(target_x) * 2.0
@@ -1033,9 +935,7 @@ class TutorialEnv(DirectRLEnv):
         self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
 
         # 获取目标点相对机器人位置的yaw角度
-        target_yaw = get_target_direction(
-            self.target_pos[env_ids, :2], default_root_state[:, :2]
-        )
+        target_yaw = get_target_direction(self.target_pos[env_ids, :2], default_root_state[:, :2])
         target_quat = yaw_to_quaternion(target_yaw)
 
         # 确保四元数归一化
@@ -1052,9 +952,7 @@ class TutorialEnv(DirectRLEnv):
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         # 从归一化后的四元数提取 yaw
         w, x, y, z = torch.unbind(target_quat, dim=-1)
-        self.target_yaw_setpoint[env_ids] = torch.atan2(
-            2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)
-        ).unsqueeze(-1)
+        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(-1)
 
     def _fixed_reset_positions(self, env_ids):
         """保持障碍物在原始位置，无人机位于原点，目标点在边界随机采样。"""
@@ -1066,14 +964,10 @@ class TutorialEnv(DirectRLEnv):
         # 1. 障碍物保持在 config 定义的初始位置 (default_root_state)
         if len(self.obstacles) > 0:
             for k in range(len(self.obstacles)):
-                obs_defaults = (
-                    self.obstacles[k].data.default_root_state[env_ids].clone()
-                )
+                obs_defaults = self.obstacles[k].data.default_root_state[env_ids].clone()
                 obs_defaults[:, :3] += self.scene.env_origins[env_ids]
                 self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
-                self.obstacles[k].write_root_velocity_to_sim(
-                    obs_defaults[:, 7:], env_ids
-                )
+                self.obstacles[k].write_root_velocity_to_sim(obs_defaults[:, 7:], env_ids)
 
         # 2. 无人机位于各环境原点 (0, 0, 2)
         default_root_state[:, 0:2] = self.scene.env_origins[env_ids, 0:2]
@@ -1113,9 +1007,7 @@ class TutorialEnv(DirectRLEnv):
         self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
 
         # 4. 设置机器人朝向目标点
-        target_yaw = get_target_direction(
-            self.target_pos[env_ids, :2], default_root_state[:, :2]
-        )
+        target_yaw = get_target_direction(self.target_pos[env_ids, :2], default_root_state[:, :2])
         target_quat = yaw_to_quaternion(target_yaw)
         default_root_state[:, 3:7] = target_quat
 
@@ -1125,9 +1017,7 @@ class TutorialEnv(DirectRLEnv):
         # 5. 初始化控制器状态
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         w, x, y, z = torch.unbind(target_quat, dim=-1)
-        self.target_yaw_setpoint[env_ids] = torch.atan2(
-            2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)
-        ).unsqueeze(-1)
+        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(-1)
 
     def _corner_diagonal_reset_positions(self, env_ids):
         """障碍物随机网格重置；无人机起点为四角之一，目标为对角角点。"""
@@ -1160,12 +1050,8 @@ class TutorialEnv(DirectRLEnv):
                 max_offset = (self.cell_size / 2.0) - r
                 max_offset = torch.clamp(max_offset, min=0.0)
 
-                offset_x = (
-                    torch.rand(len_env_ids, device=self.device) * 2 - 1
-                ) * max_offset
-                offset_y = (
-                    torch.rand(len_env_ids, device=self.device) * 2 - 1
-                ) * max_offset
+                offset_x = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * max_offset
+                offset_y = (torch.rand(len_env_ids, device=self.device) * 2 - 1) * max_offset
 
                 obs_x = cx + offset_x
                 obs_y = cy + offset_y
@@ -1174,9 +1060,7 @@ class TutorialEnv(DirectRLEnv):
                 dist_sq = obs_x**2 + obs_y**2
                 safe_mask = dist_sq < 3.0**2
 
-                obs_defaults = (
-                    self.obstacles[k].data.default_root_state[env_ids].clone()
-                )
+                obs_defaults = self.obstacles[k].data.default_root_state[env_ids].clone()
                 obs_defaults[:, 0] = obs_x + self.scene.env_origins[env_ids, 0]
                 obs_defaults[:, 1] = obs_y + self.scene.env_origins[env_ids, 1]
 
@@ -1185,9 +1069,7 @@ class TutorialEnv(DirectRLEnv):
                     obs_defaults[safe_mask, 2] = -10.0
 
                 self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
-                self.obstacles[k].write_root_velocity_to_sim(
-                    obs_defaults[:, 7:], env_ids
-                )
+                self.obstacles[k].write_root_velocity_to_sim(obs_defaults[:, 7:], env_ids)
 
         # 2. 无人机中心点 (0,0)，目标为 (15,15), (-15,15), (-15,-15), (15,-15) 之一
         goals_xy = torch.tensor(
@@ -1203,9 +1085,7 @@ class TutorialEnv(DirectRLEnv):
         goal_idx = torch.randint(0, 4, (len_env_ids,), device=self.device)
         goal_xy = goals_xy[goal_idx]
 
-        start_xy = torch.zeros(
-            (len_env_ids, 2), device=self.device, dtype=default_root_state.dtype
-        )
+        start_xy = torch.zeros((len_env_ids, 2), device=self.device, dtype=default_root_state.dtype)
 
         default_root_state[:, 0] = start_xy[:, 0] + self.scene.env_origins[env_ids, 0]
         default_root_state[:, 1] = start_xy[:, 1] + self.scene.env_origins[env_ids, 1]
@@ -1216,9 +1096,7 @@ class TutorialEnv(DirectRLEnv):
         self.target_pos[env_ids] = xyz + self.scene.env_origins[env_ids]
 
         # 3. 朝向目标并写入无人机状态
-        target_yaw = get_target_direction(
-            self.target_pos[env_ids, :2], default_root_state[:, :2]
-        )
+        target_yaw = get_target_direction(self.target_pos[env_ids, :2], default_root_state[:, :2])
         target_quat = yaw_to_quaternion(target_yaw)
         quat_norm = torch.norm(target_quat, dim=-1, keepdim=True)
         target_quat = target_quat / (quat_norm + 1e-8)
@@ -1229,9 +1107,7 @@ class TutorialEnv(DirectRLEnv):
 
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         w, x, y, z = torch.unbind(target_quat, dim=-1)
-        self.target_yaw_setpoint[env_ids] = torch.atan2(
-            2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)
-        ).unsqueeze(-1)
+        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(-1)
 
 
 class DepthImageBuffer:
@@ -1268,20 +1144,14 @@ class DepthImageBuffer:
             # 缓存常数张量，避免每步出现 CPU 列表到 GPU Tensor 的同步拷贝
             self.idx_000 = torch.tensor([0, 0, 0], device=self.device)
             self.idx_100 = torch.tensor([1, 0, 0], device=self.device)
-            self._batch_idx = (
-                torch.arange(self.num_envs, device=self.device)
-                .unsqueeze(1)
-                .expand(-1, 3)
-            )
+            self._batch_idx = torch.arange(self.num_envs, device=self.device).unsqueeze(1).expand(-1, 3)
 
         new_imgs = depth_norm.squeeze(-1)  # (num_envs, h, w)
 
         # 处理已满的缓冲区
         full_mask = self.buffer_full
         if full_mask.any():
-            self.buffer[full_mask] = torch.roll(
-                self.buffer[full_mask], shifts=-1, dims=1
-            )
+            self.buffer[full_mask] = torch.roll(self.buffer[full_mask], shifts=-1, dims=1)
             self.buffer[full_mask, -1] = new_imgs[full_mask]
 
         # 处理未满的缓冲区
@@ -1291,22 +1161,14 @@ class DepthImageBuffer:
             size_idx = self.current_sizes[env_idx]
             self.buffer[env_idx, size_idx] = new_imgs[env_idx]
             self.current_sizes[env_idx] += 1
-            self.buffer_full = self.buffer_full | (
-                self.current_sizes >= self.buffer_size
-            )
+            self.buffer_full = self.buffer_full | (self.current_sizes >= self.buffer_size)
 
         # 计算索引
-        latest_idx = torch.where(
-            self.buffer_full, self.buffer_size - 1, self.current_sizes - 1
-        )
-        middle_idx = torch.where(
-            self.buffer_full, self.buffer_size // 2, self.current_sizes // 2
-        )
+        latest_idx = torch.where(self.buffer_full, self.buffer_size - 1, self.current_sizes - 1)
+        middle_idx = torch.where(self.buffer_full, self.buffer_size // 2, self.current_sizes // 2)
         oldest_idx = torch.zeros_like(latest_idx)
 
-        indices = torch.stack(
-            [latest_idx, middle_idx, oldest_idx], dim=1
-        )  # (num_envs, 3)
+        indices = torch.stack([latest_idx, middle_idx, oldest_idx], dim=1)  # (num_envs, 3)
 
         # 特殊情况处理
         size_1 = self.current_sizes == 1
@@ -1386,12 +1248,8 @@ def yaw_to_quaternion(yaw: torch.Tensor) -> torch.Tensor:
 # 根据目标位置和机器人位置计算yaw角度
 @torch.jit.script
 def get_target_direction(target_pos, robot_pos) -> torch.Tensor:
-    direction_vector = (
-        target_pos - robot_pos
-    )  # 目标点相对机器人的位置 (num_reset_envs, 2)[env_id, x, y]
-    direction_vector = direction_vector / torch.norm(
-        direction_vector, dim=-1, keepdim=True
-    )
+    direction_vector = target_pos - robot_pos  # 目标点相对机器人的位置 (num_reset_envs, 2)[env_id, x, y]
+    direction_vector = direction_vector / torch.norm(direction_vector, dim=-1, keepdim=True)
     yaw = torch.atan2(direction_vector[:, 1], direction_vector[:, 0])  # 计算yaw角度
     return yaw  # shape: (num_reset_envs,)
 

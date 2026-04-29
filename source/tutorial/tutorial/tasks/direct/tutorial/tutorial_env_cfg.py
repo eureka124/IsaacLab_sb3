@@ -18,9 +18,7 @@ from gymnasium import spaces
 @configclass
 class MySceneCfg(InteractiveSceneCfg):
     # 无人机模型
-    robot_cfg: ArticulationCfg = HUMMINGBIRD_CFG.replace(
-        prim_path="{ENV_REGEX_NS}/Robot"
-    )
+    robot_cfg: ArticulationCfg = HUMMINGBIRD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
     # 无人机主观深度相机
     camera = TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/base_link/front_cam",
@@ -34,9 +32,7 @@ class MySceneCfg(InteractiveSceneCfg):
             horizontal_aperture=20.955,
             clipping_range=(0.1, 15),
         ),
-        offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.0, 0.0, -1.0), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"
-        ),
+        offset=TiledCameraCfg.OffsetCfg(pos=(0.0, 0.0, -1.0), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"),
     )
     # 接触传感器 (监听机身和旋翼的接触力)
     contact_forces = ContactSensorCfg(
@@ -211,15 +207,13 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     # - spaces definition
     # observation_space = 4
     observation_space = {
-        "camera": spaces.Box(low=-1, high=1, shape=(1, 12, 16), dtype=np.float32),
+        "camera": spaces.Box(low=0.0, high=1.0, shape=(1, 12, 16), dtype=np.float32),
         "robot-state": 8,
-        "critic-state": 15,
+        "critic-toa": spaces.Box(low=0.0, high=1.0, shape=(1, 201, 201), dtype=np.float32),
     }
     state_space = 0
     # simulation
     sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
 
     # scene
-    scene: InteractiveSceneCfg = MySceneCfg(
-        num_envs=4, env_spacing=30.0, replicate_physics=True
-    )
+    scene: InteractiveSceneCfg = MySceneCfg(num_envs=4, env_spacing=30.0, replicate_physics=True)
