@@ -28,10 +28,10 @@ class TutorialEnv(DirectRLEnv):
     def __init__(self, cfg: TutorialEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
 
-        # Update the observation space for camera to be uint8 [0, 255]
+        # Keep camera observation normalized in [-1, 1] for SB3 image handling.
         if isinstance(self.observation_space, gym.spaces.Dict) and "camera" in self.observation_space.spaces:
             self.observation_space.spaces["camera"] = gym.spaces.Box(
-                low=0.0,
+                low=-1.0,
                 high=1.0,
                 shape=self.observation_space.spaces["camera"].shape,
                 dtype=np.float32,
@@ -277,8 +277,9 @@ class TutorialEnv(DirectRLEnv):
             align_corners=True,
         )
 
-        # clamp and normalize to [0,1] similar to previous behavior
+        # clamp and normalize to [-1, 1] for SB3 image handling
         sampled = torch.clamp(sampled, min=0.0, max=255.0) / 255.0
+        sampled = sampled * 2.0 - 1.0
         return sampled
 
     def _update_toa_cache(self, env_ids: torch.Tensor) -> None:
@@ -445,8 +446,6 @@ class TutorialEnv(DirectRLEnv):
         # 注意：这里需要修改 _compute_toa_gradient 或直接调用 TOA 里的函数来支持大批量点
         # 现有的 _compute_toa_gradient 使用 self.toa_maps (全环境) 和 env_origins
         # 我们这里只需要 env 0 的梯度
-        dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
-
         # 直接使用 TOA 模块工具计算 env 0 的梯度分布
         # 为了高效，我们只处理 env 0 的地图
         env0_map = self.toa_maps[0:1]  # (1, H, W)
@@ -669,6 +668,7 @@ class TutorialEnv(DirectRLEnv):
         )
         depth_frame = torch.clamp(depth_frame, min=0.0, max=max_vals)
         depth_frame = depth_frame / max_vals  # 归一化到 [0, 1]
+        depth_frame = depth_frame * 2.0 - 1.0  # 映射到 [-1, 1]
         # print(depth_norm.shape) # (env_num, 1, 12, 16)
         return depth_frame  # shape:[env_num, 1, 12, 16]
 
