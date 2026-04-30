@@ -197,6 +197,8 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 5  # 5个dt进行一次决策
     episode_length_s = 40  # 导航任务最长时间40s
+    # critic TOA crop size (pixels)
+    critic_toa_crop_size: int = 64
 
     action_space = spaces.Box(
         low=np.array([-0.1, -0.5, -np.pi / 3], dtype=np.float32),  # 每个维度的最小值
@@ -209,7 +211,12 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     observation_space = {
         "camera": spaces.Box(low=0.0, high=1.0, shape=(1, 12, 16), dtype=np.float32),
         "robot-state": 8,
-        "critic-toa": spaces.Box(low=0.0, high=1.0, shape=(1, 201, 201), dtype=np.float32),
+        "critic-toa": spaces.Box(
+            low=0.0,
+            high=1.0,
+            shape=(1, critic_toa_crop_size, critic_toa_crop_size),
+            dtype=np.float32,
+        ),
     }
     state_space = 0
     # simulation

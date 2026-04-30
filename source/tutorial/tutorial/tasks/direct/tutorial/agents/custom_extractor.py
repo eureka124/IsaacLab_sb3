@@ -222,7 +222,7 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
 
         # 2. Critic State Network (MLP)
         critic_state_space = observation_space["critic-toa"]
-        critic_state_dim = critic_state_space.shape[0]
+        critic_state_dim = int(torch.tensor(critic_state_space.shape).prod().item())
         self.critic_state_mlp = nn.Linear(critic_state_dim, 192)
 
         # Total features dim is the sum of both MLP outputs
@@ -235,8 +235,9 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
         state_features = self.robot_state_mlp(obs_robot)
 
         obs_critic = observations["critic-toa"]
-        if obs_critic.dim() == 1:
+        if obs_critic.dim() == 3:
             obs_critic = obs_critic.unsqueeze(0)
+        obs_critic = obs_critic.flatten(start_dim=1)
         critic_features = self.critic_state_mlp(obs_critic)
 
         return torch.add(state_features, critic_features)
@@ -248,8 +249,11 @@ class GodViewExtractor(BaseFeaturesExtractor):
 
         # Calculate features dim
         robot_state_dim = observation_space["robot-state"].shape[0]
-        critic_state_dim = observation_space["critic-toa"].shape[0]
+        critic_state_dim = int(torch.tensor(observation_space["critic-toa"].shape).prod().item())
         self._features_dim = robot_state_dim + critic_state_dim
 
     def forward(self, observations) -> torch.Tensor:
-        return torch.cat([observations["robot-state"], observations["critic-toa"]], dim=1)
+        critic = observations["critic-toa"]
+        if critic.dim() > 2:
+            critic = critic.flatten(start_dim=1)
+        return torch.cat([observations["robot-state"], critic], dim=1)

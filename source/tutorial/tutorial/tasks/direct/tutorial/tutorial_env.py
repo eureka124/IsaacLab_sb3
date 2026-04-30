@@ -108,6 +108,8 @@ class TutorialEnv(DirectRLEnv):
         self.toa_robot_radius = 0.4
         self.toa_safe_distance = 2.0
         self.toa_slow_speed = 0.2
+        # critic TOA crop size from config
+        self.critic_toa_crop_size = getattr(self.cfg, "critic_toa_crop_size", 64)
         self.toa_maps = torch.zeros(
             (self.num_envs, self.toa_grid_size, self.toa_grid_size),
             device=self.device,
@@ -206,6 +208,78 @@ class TutorialEnv(DirectRLEnv):
             self.toa_y_max,
             self.device,
         )
+
+    def _build_robot_aligned_critic_toa(self, crop_size: int = 64) -> torch.Tensor:
+        """Build a robot-aligned, rotated and cropped TOA tensor for critic.
+
+        Returns tensor shape (num_envs, 1, crop_size, crop_size), values normalized [0,1].
+        """
+        device = self.device
+        dtype = torch.float32
+
+        # world resolution of TOA grid
+        dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
+        half_extent = (crop_size / 2.0) * dx
+
+        # build local (robot-frame) sampling grid centered at robot (meters)
+        xs = torch.linspace(-half_extent + dx / 2.0, half_extent - dx / 2.0, steps=crop_size, device=device, dtype=dtype)
+        ys = torch.linspace(-half_extent + dx / 2.0, half_extent - dx / 2.0, steps=crop_size, device=device, dtype=dtype)
+        X, Y = torch.meshgrid(xs, ys, indexing="xy")
+        grid_local = torch.stack([X, Y], dim=-1)  # (H, W, 2)
+        HW = crop_size * crop_size
+        grid_flat = grid_local.view(1, HW, 2)  # (1,HW,2)
+
+        N = self.num_envs
+        # allow overriding by instance config
+        if hasattr(self, "critic_toa_crop_size"):
+            crop_size = int(self.critic_toa_crop_size)
+
+        # robot positions relative to env origins (local coords)
+        robot_pos_local = (self.robot.data.root_pos_w[:, :2] - self.scene.env_origins[:, :2]).to(device=device, dtype=dtype)
+
+        # robot yaw from quaternion
+        q = self.robot.data.root_quat_w.to(device=device, dtype=dtype)
+        w, x, y, z = torch.unbind(q, dim=-1)
+        yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))  # (N,)
+        cos = torch.cos(yaw)
+        sin = torch.sin(yaw)
+
+        # build rotation matrices per env: rot = [[cos, -sin],[sin, cos]]
+        rot = torch.zeros((N, 2, 2), device=device, dtype=dtype)
+        rot[:, 0, 0] = cos
+        rot[:, 0, 1] = -sin
+        rot[:, 1, 0] = sin
+        rot[:, 1, 1] = cos
+
+        # expand grid and apply rotation
+        grid_exp = grid_flat.expand(N, -1, -1)  # (N,HW,2)
+        rotated = torch.matmul(grid_exp, rot.transpose(1, 2))  # (N,HW,2)
+
+        # world coordinates (in env-local frame) = robot_local + rotated
+        world_pts = rotated + robot_pos_local.unsqueeze(1)  # (N,HW,2)
+
+        # normalize to [-1,1] for grid_sample using toa bounds
+        x_world = world_pts[..., 0]
+        y_world = world_pts[..., 1]
+        x_norm = 2.0 * (x_world - float(self.toa_x_min)) / float(self.toa_x_max - self.toa_x_min) - 1.0
+        y_norm = 2.0 * (y_world - float(self.toa_y_min)) / float(self.toa_y_max - self.toa_y_min) - 1.0
+
+        sample_grid = torch.stack([x_norm, y_norm], dim=-1).view(N, crop_size, crop_size, 2)
+
+        # input maps: (N,1,Hmap,Wmap)
+        input_maps = self.toa_maps.unsqueeze(1).to(device=device, dtype=dtype)
+
+        sampled = F.grid_sample(
+            input_maps,
+            sample_grid,
+            mode="bilinear",
+            padding_mode="border",
+            align_corners=True,
+        )
+
+        # clamp and normalize to [0,1] similar to previous behavior
+        sampled = torch.clamp(sampled, min=0.0, max=255.0) / 255.0
+        return sampled
 
     def _update_toa_cache(self, env_ids: torch.Tensor) -> None:
         if env_ids is None or len(env_ids) == 0:
@@ -680,7 +754,7 @@ class TutorialEnv(DirectRLEnv):
             "policy": {
                 "robot-state": obs,
                 "camera": camera_observation,
-                "critic-toa": torch.clamp(self.toa_maps.unsqueeze(1), 0.0, 255.0) / 255.0,
+                "critic-toa": self._build_robot_aligned_critic_toa(crop_size=self.critic_toa_crop_size),
             },
         }
         # print("Observations:", {k: v for k, v in observations["policy"].items()})
