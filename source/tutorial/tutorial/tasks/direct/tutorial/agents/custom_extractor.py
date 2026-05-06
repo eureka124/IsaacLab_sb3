@@ -215,6 +215,32 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: gym.spaces.Dict):
         super().__init__(observation_space, features_dim=1)
 
+        camera_space = observation_space["camera"]
+        n_input_channels = camera_space.shape[0]
+        self.camera_shape = camera_space.shape
+        self.expected_camera_channels = n_input_channels
+        self.expected_camera_hw = tuple(camera_space.shape[-2:])
+
+        self.cnn = nn.Sequential(
+            nn.Conv2d(n_input_channels, 32, kernel_size=2, stride=1, padding=0),
+            nn.LeakyReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=0),
+            nn.LeakyReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=0),
+            nn.LeakyReLU(),
+            nn.Flatten(),
+        )
+
+        # Compute CNN output dimension
+        with torch.no_grad():
+            # Create a dummy observation to calculate output shape
+            # Add batch dimension [1, C, H, W]
+            sample = torch.as_tensor(camera_space.sample()[None]).float()
+            cnn_output_dim = self.cnn(sample).shape[1]
+
+        # features_fc equivalent
+        self.camera_fc = nn.Linear(cnn_output_dim, 192)
+
         # 1. Robot State Network (MLP)
         robot_state_space = observation_space["robot-state"]
         state_dim = robot_state_space.shape[0]
@@ -229,6 +255,46 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
         self._features_dim = 192
 
     def forward(self, observations) -> torch.Tensor:
+        # 1. Process Camera
+        # Ensure observation is correctly typed and shaped for CNN (B, C, H, W)
+        obs_camera = observations["camera"]
+        if obs_camera.dim() == 3:
+            # Could be CHW, HWC, or NHW (batched grayscale without channel dim).
+            expected_h, expected_w = self.expected_camera_hw
+            if obs_camera.shape[1:] == (expected_h, expected_w) and self.expected_camera_channels == 1:
+                # NHW -> NCHW for grayscale camera.
+                obs_camera = obs_camera.unsqueeze(1)
+            elif obs_camera.shape[0] == self.expected_camera_channels:
+                obs_camera = obs_camera.unsqueeze(0)
+            elif obs_camera.shape[-1] == self.expected_camera_channels:
+                obs_camera = obs_camera.permute(2, 0, 1).unsqueeze(0)
+            else:
+                raise RuntimeError("Unexpected camera tensor shape: " f"{tuple(obs_camera.shape)}; expected channel={self.expected_camera_channels}")
+        elif obs_camera.dim() == 4:
+            # Prefer identifying layout by spatial dimensions first.
+            expected_h, expected_w = self.expected_camera_hw
+            if obs_camera.shape[2:] == (expected_h, expected_w):
+                # NCHW or C/N swapped.
+                if obs_camera.shape[1] == self.expected_camera_channels:
+                    pass
+                elif obs_camera.shape[0] == self.expected_camera_channels:
+                    obs_camera = obs_camera.permute(1, 0, 2, 3)
+                else:
+                    raise RuntimeError("Unexpected camera tensor shape: " f"{tuple(obs_camera.shape)}; expected NCHW with channel={self.expected_camera_channels}")
+            elif obs_camera.shape[1:3] == (expected_h, expected_w):
+                # NHWC -> NCHW.
+                obs_camera = obs_camera.permute(0, 3, 1, 2)
+            else:
+                raise RuntimeError("Unexpected camera tensor shape: " f"{tuple(obs_camera.shape)}; expected spatial={self.expected_camera_hw}")
+        else:
+            raise RuntimeError(f"Unsupported camera tensor rank: {obs_camera.dim()} for shape {tuple(obs_camera.shape)}")
+
+        if obs_camera.shape[1] != self.expected_camera_channels:
+            raise RuntimeError("Camera tensor normalization failed: " f"got shape {tuple(obs_camera.shape)}, expected channel={self.expected_camera_channels}")
+
+        img_features = self.cnn(obs_camera)
+        img_features = self.camera_fc(img_features)
+
         obs_robot = observations["robot-state"]
         if obs_robot.dim() == 1:
             obs_robot = obs_robot.unsqueeze(0)
@@ -240,7 +306,7 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
         obs_critic = obs_critic.flatten(start_dim=1)
         critic_features = self.critic_state_mlp(obs_critic)
 
-        return torch.add(state_features, critic_features)
+        return torch.add(state_features, critic_features, img_features)
 
 
 class GodViewExtractor(BaseFeaturesExtractor):
