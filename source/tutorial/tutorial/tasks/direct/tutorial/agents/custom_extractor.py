@@ -207,7 +207,7 @@ class ActorFeaturesExtractor(BaseFeaturesExtractor):
             obs_robot = obs_robot.unsqueeze(0)
         state_features = self.robot_state_mlp(obs_robot)
 
-        # 3. Concatenate
+        # 3. add
         return torch.add(img_features, state_features)
 
 
@@ -239,20 +239,20 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
             cnn_output_dim = self.cnn(sample).shape[1]
 
         # features_fc equivalent
-        self.camera_fc = nn.Linear(cnn_output_dim, 192)
+        self.camera_fc = nn.Linear(cnn_output_dim, 384)
 
         # 1. Robot State Network (MLP)
         robot_state_space = observation_space["robot-state"]
         state_dim = robot_state_space.shape[0]
-        self.robot_state_mlp = nn.Linear(state_dim, 192)
+        self.robot_state_mlp = nn.Linear(state_dim, 384)
 
         # 2. Critic State Network (MLP)
         critic_state_space = observation_space["critic-toa"]
         critic_state_dim = int(torch.tensor(critic_state_space.shape).prod().item())
-        self.critic_state_mlp = nn.Linear(critic_state_dim, 192)
+        self.critic_state_mlp = nn.Linear(critic_state_dim, 384)
 
         # Total features dim is the sum of both MLP outputs
-        self._features_dim = 192
+        self._features_dim = 384
 
     def forward(self, observations) -> torch.Tensor:
         # 1. Process Camera
@@ -306,7 +306,8 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
         obs_critic = obs_critic.flatten(start_dim=1)
         critic_features = self.critic_state_mlp(obs_critic)
 
-        return torch.add(state_features, critic_features, img_features)
+        # Sum image, robot-state and critic features element-wise
+        return img_features + state_features + critic_features
 
 
 class GodViewExtractor(BaseFeaturesExtractor):
