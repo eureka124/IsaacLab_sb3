@@ -109,7 +109,7 @@ class TutorialEnv(DirectRLEnv):
         self.toa_safe_distance = 2.0
         self.toa_slow_speed = 0.2
         # critic TOA crop size from config
-        self.critic_toa_crop_size = getattr(self.cfg, "critic_toa_crop_size", 64)
+        self.critic_toa_crop_size = getattr(self.cfg, "critic_toa_crop_size", 16)
         self.toa_maps = torch.zeros(
             (self.num_envs, self.toa_grid_size, self.toa_grid_size),
             device=self.device,

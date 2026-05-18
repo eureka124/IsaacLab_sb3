@@ -315,9 +315,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     if args_cli.wandb:
         callbacks.extend(
             [
-                WandbCallback(
-                    verbose=2,
-                ),
+                WandbCallback(verbose=2),
                 ToaVisualizationCallback(log_freq=args_cli.log_interval, verbose=1),
             ]
         )
