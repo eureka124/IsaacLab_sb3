@@ -239,20 +239,20 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
             cnn_output_dim = self.cnn(sample).shape[1]
 
         # features_fc equivalent
-        self.camera_fc = nn.Linear(cnn_output_dim, 384)
+        self.camera_fc = nn.Linear(cnn_output_dim, 192)
 
         # 1. Robot State Network (MLP)
         robot_state_space = observation_space["robot-state"]
         state_dim = robot_state_space.shape[0]
-        self.robot_state_mlp = nn.Linear(state_dim, 384)
+        self.robot_state_mlp = nn.Linear(state_dim, 192)
 
         # 2. Critic State Network (MLP)
         critic_state_space = observation_space["critic-toa"]
         critic_state_dim = int(torch.tensor(critic_state_space.shape).prod().item())
-        self.toa_mlp = nn.Sequential(nn.Linear(critic_state_dim, 512), nn.LeakyReLU(), nn.Linear(512, 384), nn.LeakyReLU())
+        self.toa_mlp = nn.Sequential(nn.Linear(critic_state_dim, 512), nn.LeakyReLU(), nn.Linear(512, 192), nn.LeakyReLU())
 
         # Total features dim is the sum of both MLP outputs
-        self._features_dim = 384
+        self._features_dim = 192
 
     def forward(self, observations) -> torch.Tensor:
         # 1. Process Camera

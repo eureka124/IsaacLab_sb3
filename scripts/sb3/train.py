@@ -278,6 +278,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         policy_kwargs["features_extractor_class"] = CustomCombinedExtractor
         policy_kwargs["critic_features_extractor_class"] = CriticFeaturesExtractor
         policy_kwargs["actor_features_extractor_class"] = ActorFeaturesExtractor
+        policy_kwargs["share_features_extractor"] = False
     agent_cfg["policy_kwargs"] = policy_kwargs
 
     agent = RecurrentPPO(policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg)
