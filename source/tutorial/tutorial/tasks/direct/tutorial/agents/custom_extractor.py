@@ -249,7 +249,7 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
         # 2. Critic State Network (MLP)
         critic_state_space = observation_space["critic-toa"]
         critic_state_dim = int(torch.tensor(critic_state_space.shape).prod().item())
-        self.critic_state_mlp = nn.Linear(critic_state_dim, 384)
+        self.toa_mlp = nn.Sequential(nn.Linear(critic_state_dim, 512), nn.LeakyReLU(), nn.Linear(512, 384), nn.LeakyReLU())
 
         # Total features dim is the sum of both MLP outputs
         self._features_dim = 384
