@@ -304,7 +304,7 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
         if obs_critic.dim() == 3:
             obs_critic = obs_critic.unsqueeze(0)
         obs_critic = obs_critic.flatten(start_dim=1)
-        critic_features = self.critic_state_mlp(obs_critic)
+        critic_features = self.toa_mlp(obs_critic)
 
         # Sum image, robot-state and critic features element-wise
         return img_features + state_features + critic_features
