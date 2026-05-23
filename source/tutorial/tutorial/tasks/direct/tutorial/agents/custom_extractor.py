@@ -230,6 +230,15 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
             nn.LeakyReLU(),
             nn.Flatten(),
         )
+        self.toa_cnn = nn.Sequential(
+            nn.Conv2d(n_input_channels, 32, kernel_size=2, stride=1, padding=0),
+            nn.LeakyReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=0),
+            nn.LeakyReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=0),
+            nn.LeakyReLU(),
+            nn.Flatten(),
+        )
 
         # Compute CNN output dimension
         with torch.no_grad():
@@ -237,6 +246,8 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
             # Add batch dimension [1, C, H, W]
             sample = torch.as_tensor(camera_space.sample()[None]).float()
             cnn_output_dim = self.cnn(sample).shape[1]
+            sample_toa = torch.as_tensor(observation_space["critic-toa"].sample()[None]).float()
+            toa_cnn_output_dim = self.toa_cnn(sample_toa).shape[1]
 
         # features_fc equivalent
         self.camera_fc = nn.Linear(cnn_output_dim, 192)
@@ -248,8 +259,8 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
 
         # 2. Critic State Network (MLP)
         critic_state_space = observation_space["critic-toa"]
-        critic_state_dim = int(torch.tensor(critic_state_space.shape).prod().item())
-        self.toa_mlp = nn.Sequential(nn.Linear(critic_state_dim, 512), nn.LeakyReLU(), nn.Linear(512, 192), nn.LeakyReLU())
+
+        self.toa_mlp = nn.Linear(toa_cnn_output_dim, 192)
 
         # Total features dim is the sum of both MLP outputs
         self._features_dim = 192
@@ -304,7 +315,8 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
         if obs_critic.dim() == 3:
             obs_critic = obs_critic.unsqueeze(0)
         obs_critic = obs_critic.flatten(start_dim=1)
-        critic_features = self.toa_mlp(obs_critic)
+        critic_features = self.toa_cnn(obs_critic)
+        critic_features = self.toa_mlp(critic_features)
 
         # Sum image, robot-state and critic features element-wise
         return img_features + state_features + critic_features
