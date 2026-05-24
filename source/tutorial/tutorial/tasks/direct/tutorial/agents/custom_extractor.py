@@ -314,7 +314,6 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
         obs_critic = observations["critic-toa"]
         if obs_critic.dim() == 3:
             obs_critic = obs_critic.unsqueeze(0)
-        obs_critic = obs_critic.flatten(start_dim=1)
         critic_features = self.toa_cnn(obs_critic)
         critic_features = self.toa_mlp(critic_features)
 
