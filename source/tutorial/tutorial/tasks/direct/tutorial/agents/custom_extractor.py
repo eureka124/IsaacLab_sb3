@@ -235,8 +235,6 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
             nn.LeakyReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=0),
             nn.LeakyReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=0),
-            nn.LeakyReLU(),
             nn.Flatten(),
         )
 
