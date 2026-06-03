@@ -11,7 +11,7 @@ import omni.timeline
 from isaaclab.envs import DirectRLEnv
 from isaaclab.assets import RigidObject
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
-from .tutorial_env_cfg import TutorialEnvCfg, maze_obstacles
+from .tutorial_env_cfg import TutorialEnvCfg, maze_obstacles, obstacle_positions
 from . import TOA
 from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG
 from isaaclab.markers import VisualizationMarkers
@@ -165,14 +165,23 @@ class TutorialEnv(DirectRLEnv):
             device=self.device,
         )
 
-        from .tutorial_env_cfg import maze_obstacles
+        from .tutorial_env_cfg import maze_obstacles, obstacle_positions
+
+        cylinder_obstacles = [
+            TOA.circle_obstacle_to_rect(
+                center_xy=(float(pos[0]), float(pos[1])),
+                radius=float(radius),
+            )
+            for pos, radius, _height in obstacle_positions
+        ]
+        toa_static_obstacles = list(maze_obstacles) + cylinder_obstacles
 
         for i, goal_xy in enumerate(self.corner_coords):
             toa_map = TOA.build_toa_map(
                 goal_xy=goal_xy,
                 grid_xs=self.toa_grid_xs,
                 grid_ys=self.toa_grid_ys,
-                obstacles=maze_obstacles,  # Static maze only
+                obstacles=toa_static_obstacles,
                 robot_radius=self.toa_robot_radius,
                 safe_distance=self.toa_safe_distance,
                 slow_speed=self.toa_slow_speed,
@@ -468,8 +477,8 @@ class TutorialEnv(DirectRLEnv):
         )
         plt.gca().add_patch(crop_polygon)
 
-        # 绘制迷宫墙壁 (maze_obstacles)
-        from matplotlib.patches import Rectangle
+        # 绘制迷宫墙壁与圆柱障碍轮廓
+        from matplotlib.patches import Circle, Rectangle
 
         for pos, size in maze_obstacles:
             left = pos[0] - size[0] / 2.0
@@ -484,6 +493,17 @@ class TutorialEnv(DirectRLEnv):
                 alpha=0.5,
             )
             plt.gca().add_patch(rect)
+
+        for pos, radius, _height in obstacle_positions:
+            circle = Circle(
+                (pos[0], pos[1]),
+                radius,
+                linewidth=1,
+                edgecolor="black",
+                facecolor="gray",
+                alpha=0.5,
+            )
+            plt.gca().add_patch(circle)
 
         plt.colorbar(label="Time of Arrival")
         plt.title(f"TOA Map - Step {self.step_count}")
@@ -594,8 +614,8 @@ class TutorialEnv(DirectRLEnv):
         arrow = FancyArrowPatch((robot_xy[0], robot_xy[1]), (robot_xy[0] + dx, robot_xy[1] + dy), arrowstyle="->", color="blue", mutation_scale=18, linewidth=2)
         plt.gca().add_patch(arrow)
 
-        # 4. 绘制迷宫墙壁 (maze_obstacles)
-        from matplotlib.patches import Rectangle
+        # 4. 绘制迷宫墙壁与圆柱障碍轮廓
+        from matplotlib.patches import Circle, Rectangle
 
         for pos, size in maze_obstacles:
             # pos 是中心点 (x, y, z)，size 是 (sx, sy, sz)
@@ -612,6 +632,17 @@ class TutorialEnv(DirectRLEnv):
                 alpha=0.5,
             )
             plt.gca().add_patch(rect)
+
+        for pos, radius, _height in obstacle_positions:
+            circle = Circle(
+                (pos[0], pos[1]),
+                radius,
+                linewidth=1,
+                edgecolor="black",
+                facecolor="gray",
+                alpha=0.5,
+            )
+            plt.gca().add_patch(circle)
 
         plt.title(f"TOA Gradient Field (-grad) - Step {self.step_count}")
         plt.xlabel("X (m)")
