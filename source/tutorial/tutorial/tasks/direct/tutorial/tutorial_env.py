@@ -377,10 +377,47 @@ class TutorialEnv(DirectRLEnv):
         # print("_pre_physics_step")
         self.actions = actions.clone()
 
-        # Save the first environment's robot-aligned TOA map periodically.
+        # Save the first environment's global TOA map with the robot-aligned crop box periodically.
         self.step_count += 1
         if self.step_count % self.toa_save_interval == 0:
-            self._save_robot_aligned_toa_map(env_id=0)
+            self._save_first_env_toa()
+
+    def _get_robot_aligned_toa_crop_corners(
+        self,
+        env_id: int = 0,
+        crop_size: int | None = None,
+    ) -> np.ndarray:
+        """Return the four crop corners in env-local coordinates for visualization."""
+        crop_size = int(crop_size if crop_size is not None else getattr(self, "critic_toa_crop_size", 64))
+        dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
+        half_extent = (crop_size / 2.0) * dx
+
+        robot_pos_local = (self.robot.data.root_pos_w[env_id, :2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy()
+
+        quat = self.robot.data.root_quat_w[env_id].detach().cpu()
+        w, x, y, z = quat.tolist()
+        yaw = float(np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
+        cos_yaw = float(np.cos(yaw))
+        sin_yaw = float(np.sin(yaw))
+
+        local_corners = np.array(
+            [
+                [-half_extent, -half_extent],
+                [half_extent, -half_extent],
+                [half_extent, half_extent],
+                [-half_extent, half_extent],
+            ],
+            dtype=np.float32,
+        )
+
+        rot = np.array(
+            [
+                [cos_yaw, -sin_yaw],
+                [sin_yaw, cos_yaw],
+            ],
+            dtype=np.float32,
+        )
+        return local_corners @ rot.T + robot_pos_local
 
     def _save_first_env_toa(self):
         """Save the TOA map of the first environment as an image."""
@@ -406,6 +443,21 @@ class TutorialEnv(DirectRLEnv):
         # 标记机器人当前位置
         robot_xy = (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
         plt.plot(robot_xy[0], robot_xy[1], "bo", markersize=10, label="Robot")
+
+        # 叠加旋转后的 TOA 裁剪窗口，展示当前 critic 使用的局部范围
+        from matplotlib.patches import Polygon
+
+        crop_corners = self._get_robot_aligned_toa_crop_corners(env_id=0, crop_size=self.critic_toa_crop_size)
+        crop_polygon = Polygon(
+            crop_corners,
+            closed=True,
+            fill=False,
+            edgecolor="cyan",
+            linewidth=2.5,
+            linestyle="--",
+            label="Rotated TOA crop",
+        )
+        plt.gca().add_patch(crop_polygon)
 
         # 绘制迷宫墙壁 (maze_obstacles)
         from matplotlib.patches import Rectangle
