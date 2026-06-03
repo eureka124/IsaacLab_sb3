@@ -440,9 +440,18 @@ class TutorialEnv(DirectRLEnv):
         goal_xy = (self.target_pos[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
         plt.plot(goal_xy[0], goal_xy[1], "r*", markersize=15, label="Goal")
 
-        # 标记机器人当前位置
+        # 标记机器人当前位置为箭头，朝向与 yaw 对齐
         robot_xy = (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
-        plt.plot(robot_xy[0], robot_xy[1], "bo", markersize=10, label="Robot")
+        quat = self.robot.data.root_quat_w[0].detach().cpu()
+        w, x, y, z = quat.tolist()
+        yaw = float(np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
+        arrow_len = 1.0
+        dx = float(np.cos(yaw) * arrow_len)
+        dy = float(np.sin(yaw) * arrow_len)
+        from matplotlib.patches import FancyArrowPatch
+
+        arrow = FancyArrowPatch((robot_xy[0], robot_xy[1]), (robot_xy[0] + dx, robot_xy[1] + dy), arrowstyle="->", color="blue", mutation_scale=18, linewidth=2)
+        plt.gca().add_patch(arrow)
 
         # 叠加旋转后的 TOA 裁剪窗口，展示当前 critic 使用的局部范围
         from matplotlib.patches import Polygon
@@ -572,8 +581,18 @@ class TutorialEnv(DirectRLEnv):
         goal_xy = (self.target_pos[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
         plt.plot(goal_xy[0], goal_xy[1], "r*", markersize=15, label="Goal")
 
+        # 用箭头表示机器人朝向
         robot_xy = (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
-        plt.plot(robot_xy[0], robot_xy[1], "bo", markersize=10, label="Robot")
+        quat = self.robot.data.root_quat_w[0].detach().cpu()
+        w, x, y, z = quat.tolist()
+        yaw = float(np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
+        arrow_len = 1.0
+        dx = float(np.cos(yaw) * arrow_len)
+        dy = float(np.sin(yaw) * arrow_len)
+        from matplotlib.patches import FancyArrowPatch
+
+        arrow = FancyArrowPatch((robot_xy[0], robot_xy[1]), (robot_xy[0] + dx, robot_xy[1] + dy), arrowstyle="->", color="blue", mutation_scale=18, linewidth=2)
+        plt.gca().add_patch(arrow)
 
         # 4. 绘制迷宫墙壁 (maze_obstacles)
         from matplotlib.patches import Rectangle
