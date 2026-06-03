@@ -51,14 +51,13 @@ def build_toa_map(
     speed = np.ones_like(clearance, dtype=np.float32)
     if safe_distance > 1e-6:
         slow_region = clearance <= safe_distance
-        speed[slow_region] = slow_speed + (1.0 - slow_speed) * (
-            clearance[slow_region] / safe_distance
-        )
+        speed[slow_region] = slow_speed + (1.0 - slow_speed) * (clearance[slow_region] / safe_distance)
     speed = np.clip(speed, 1e-3, 1.0)
     speed = np.ma.array(speed, mask=obstacle_mask)
 
     grid_dx = float(grid_xs[1] - grid_xs[0])
     goal_radius = max(grid_dx * 1.5, 1e-3)
+    # Keep a finite initial front for skfmm stability, then rebase TOA so goal is 0.
     phi = np.sqrt((grid_x - goal_xy[0]) ** 2 + (grid_y - goal_xy[1]) ** 2) - goal_radius
     toa_map = skfmm.travel_time(phi, speed, dx=grid_dx)
 
@@ -67,7 +66,16 @@ def build_toa_map(
         # The masked areas are obstacles, they should have high TOA values
         toa_map = toa_map.filled(fill_value=1e6)
 
-    return np.asarray(toa_map, dtype=np.float32)
+    toa_map = np.asarray(toa_map, dtype=np.float32)
+
+    # Re-anchor TOA so the nearest grid cell to goal has value 0.
+    goal_ix = int(np.argmin(np.abs(grid_xs - float(goal_xy[0]))))
+    goal_iy = int(np.argmin(np.abs(grid_ys - float(goal_xy[1]))))
+    goal_toa = float(toa_map[goal_iy, goal_ix])
+    if np.isfinite(goal_toa):
+        toa_map = np.maximum(toa_map - goal_toa, 0.0)
+
+    return toa_map
 
 
 def circle_obstacle_to_rect(

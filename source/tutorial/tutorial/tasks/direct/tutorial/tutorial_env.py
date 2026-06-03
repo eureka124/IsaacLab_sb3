@@ -439,7 +439,7 @@ class TutorialEnv(DirectRLEnv):
         plt.figure(figsize=(8, 6))
         # skfmm 返回的 grid 索引通常是 [y, x]，所以转置一下
         plt.imshow(
-            toa_map.T,
+            toa_map,
             extent=[self.toa_x_min, self.toa_x_max, self.toa_y_min, self.toa_y_max],
             origin="lower",
             cmap="viridis_r",  # 使用反向色图，较小值（目标）显示为深色，障碍物/远端显示为浅色
@@ -448,6 +448,12 @@ class TutorialEnv(DirectRLEnv):
         # 标记第一个环境的目标位置 (相对于环境原点的局部坐标)
         goal_xy = (self.target_pos[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
         plt.plot(goal_xy[0], goal_xy[1], "r*", markersize=15, label="Goal")
+
+        goal_toa = self._sample_toa_from_maps(
+            self.toa_maps[0:1],
+            self.target_pos[0:1, :2],
+            self.scene.env_origins[0:1, :2],
+        )[0].item()
 
         # 标记机器人当前位置为箭头，朝向与 yaw 对齐
         robot_xy = (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
@@ -506,7 +512,7 @@ class TutorialEnv(DirectRLEnv):
             plt.gca().add_patch(circle)
 
         plt.colorbar(label="Time of Arrival")
-        plt.title(f"TOA Map - Step {self.step_count}")
+        plt.title(f"TOA Map - Step {self.step_count} - TOA(goal)={goal_toa:.3f}")
         plt.xlabel("X (m)")
         plt.ylabel("Y (m)")
         # plt.legend()
@@ -578,7 +584,7 @@ class TutorialEnv(DirectRLEnv):
         # 背景画出 TOA 地图
         toa_map = self.toa_maps[0].detach().cpu().numpy()
         plt.imshow(
-            toa_map.T,
+            toa_map,
             extent=[self.toa_x_min, self.toa_x_max, self.toa_y_min, self.toa_y_max],
             origin="lower",
             cmap="viridis_r",
