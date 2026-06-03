@@ -11,7 +11,7 @@ import omni.timeline
 from isaaclab.envs import DirectRLEnv
 from isaaclab.assets import RigidObject
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
-from .tutorial_env_cfg import TutorialEnvCfg, maze_obstacles, obstacle_positions
+from .tutorial_env_cfg import TutorialEnvCfg, maze_obstacles
 from . import TOA
 from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG
 from isaaclab.markers import VisualizationMarkers
@@ -312,22 +312,47 @@ class TutorialEnv(DirectRLEnv):
         """
         return self._build_robot_aligned_toa_map(crop_size=crop_size)
 
-    def _update_toa_cache(self, env_ids: torch.Tensor) -> None:
-        if env_ids is None or len(env_ids) == 0:
+    def _update_toa_cache(self, env_ids) -> None:
+        if env_ids is None:
             return
 
-        # Use precomputed maps by finding the closest corner for each target
-        target_local = self.target_pos[env_ids, :2] - self.scene.env_origins[env_ids, :2]
+        if not torch.is_tensor(env_ids):
+            env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
+        else:
+            env_ids = env_ids.to(device=self.device, dtype=torch.long)
+        if env_ids.numel() == 0:
+            return
 
-        # Compute distance from each target to the 4 corners
-        # corner_coords: (4, 2), target_local: (N, 2)
-        dist = torch.norm(
-            target_local.unsqueeze(1) - torch.from_numpy(self.corner_coords).to(self.device).unsqueeze(0),
-            dim=-1,
-        )
-        corner_indices = torch.argmin(dist, dim=-1)  # (N,)
+        # Obstacles are randomized at reset, so rebuild TOA maps from current obstacle states.
+        for env_id in env_ids.tolist():
+            target_local = (self.target_pos[env_id, :2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy().astype(np.float32)
 
-        self.toa_maps[env_ids] = self.precomputed_toa_maps[corner_indices]
+            env_obstacles = list(maze_obstacles)
+            for k, obs in enumerate(self.obstacles):
+                obs_pos_w = obs.data.root_pos_w[env_id]
+                # In some reset modes, disabled obstacles are moved below ground.
+                if obs_pos_w[2].item() < 0.0:
+                    continue
+
+                center_local = (obs_pos_w[:2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy()
+                radius = float(self.obstacle_radii[k])
+                env_obstacles.append(
+                    TOA.circle_obstacle_to_rect(
+                        center_xy=(float(center_local[0]), float(center_local[1])),
+                        radius=radius,
+                    )
+                )
+
+            toa_map = TOA.build_toa_map(
+                goal_xy=target_local,
+                grid_xs=self.toa_grid_xs,
+                grid_ys=self.toa_grid_ys,
+                obstacles=env_obstacles,
+                robot_radius=self.toa_robot_radius,
+                safe_distance=self.toa_safe_distance,
+                slow_speed=self.toa_slow_speed,
+            )
+            self.toa_maps[env_id] = torch.from_numpy(toa_map).to(self.device)
 
         self.prev_toa[env_ids] = self._sample_toa_from_maps(
             self.toa_maps[env_ids],
@@ -500,10 +525,14 @@ class TutorialEnv(DirectRLEnv):
             )
             plt.gca().add_patch(rect)
 
-        for pos, radius, _height in obstacle_positions:
+        for k, obs in enumerate(self.obstacles):
+            obs_pos_w = obs.data.root_pos_w[0]
+            if obs_pos_w[2].item() < 0.0:
+                continue
+            obs_xy = (obs_pos_w[:2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
             circle = Circle(
-                (pos[0], pos[1]),
-                radius,
+                (float(obs_xy[0]), float(obs_xy[1])),
+                float(self.obstacle_radii[k]),
                 linewidth=1,
                 edgecolor="black",
                 facecolor="gray",
@@ -639,10 +668,14 @@ class TutorialEnv(DirectRLEnv):
             )
             plt.gca().add_patch(rect)
 
-        for pos, radius, _height in obstacle_positions:
+        for k, obs in enumerate(self.obstacles):
+            obs_pos_w = obs.data.root_pos_w[0]
+            if obs_pos_w[2].item() < 0.0:
+                continue
+            obs_xy = (obs_pos_w[:2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
             circle = Circle(
-                (pos[0], pos[1]),
-                radius,
+                (float(obs_xy[0]), float(obs_xy[1])),
+                float(self.obstacle_radii[k]),
                 linewidth=1,
                 edgecolor="black",
                 facecolor="gray",
