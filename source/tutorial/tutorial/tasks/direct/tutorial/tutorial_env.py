@@ -117,7 +117,7 @@ class TutorialEnv(DirectRLEnv):
         self.prev_toa = torch.zeros(self.num_envs, device=self.device)
 
         # TOA Map Saving
-        self.toa_save_interval = 100  # steps
+        self.toa_save_interval = 200  # steps
         self.step_count = 0
         self.toa_output_dir = os.path.join(os.getcwd(), "outputs", "toa_maps")
         self.toa_grad_output_dir = os.path.join(os.getcwd(), "outputs", "toa_gradients")
@@ -209,78 +209,99 @@ class TutorialEnv(DirectRLEnv):
             self.device,
         )
 
-    def _build_robot_aligned_critic_toa(self, crop_size: int = 64) -> torch.Tensor:
-        """Build a robot-aligned, rotated and cropped TOA tensor for critic.
+    def _build_robot_aligned_toa_map(self, env_ids: torch.Tensor | None = None, crop_size: int | None = None) -> torch.Tensor:
+        """Build TOA maps aligned with each robot's body frame.
 
-        Returns tensor shape (num_envs, 1, crop_size, crop_size), values normalized [0,1].
+        The returned map is centered on the robot and rotated by its yaw so the
+        forward direction always points to the right in the output image.
+
+        Args:
+            env_ids: Optional subset of environments. If omitted, uses all envs.
+            crop_size: Output resolution. Defaults to ``self.critic_toa_crop_size``.
+
+        Returns:
+            Tensor with shape (N, 1, crop_size, crop_size), normalized to [-1, 1].
         """
         device = self.device
         dtype = torch.float32
+        crop_size = int(crop_size if crop_size is not None else getattr(self, "critic_toa_crop_size", 64))
 
-        # world resolution of TOA grid
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, device=device)
+        else:
+            env_ids = env_ids.to(device=device, dtype=torch.long)
+
         dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
         half_extent = (crop_size / 2.0) * dx
 
-        # build local (robot-frame) sampling grid centered at robot (meters)
         xs = torch.linspace(-half_extent + dx / 2.0, half_extent - dx / 2.0, steps=crop_size, device=device, dtype=dtype)
         ys = torch.linspace(-half_extent + dx / 2.0, half_extent - dx / 2.0, steps=crop_size, device=device, dtype=dtype)
-        X, Y = torch.meshgrid(xs, ys, indexing="xy")
-        grid_local = torch.stack([X, Y], dim=-1)  # (H, W, 2)
-        HW = crop_size * crop_size
-        grid_flat = grid_local.view(1, HW, 2)  # (1,HW,2)
+        grid_x, grid_y = torch.meshgrid(xs, ys, indexing="xy")
+        grid_local = torch.stack([grid_x, grid_y], dim=-1).view(1, crop_size * crop_size, 2)
 
-        N = self.num_envs
-        # allow overriding by instance config
-        if hasattr(self, "critic_toa_crop_size"):
-            crop_size = int(self.critic_toa_crop_size)
+        robot_pos_local = (self.robot.data.root_pos_w[env_ids, :2] - self.scene.env_origins[env_ids, :2]).to(device=device, dtype=dtype)
 
-        # robot positions relative to env origins (local coords)
-        robot_pos_local = (self.robot.data.root_pos_w[:, :2] - self.scene.env_origins[:, :2]).to(device=device, dtype=dtype)
-
-        # robot yaw from quaternion
-        q = self.robot.data.root_quat_w.to(device=device, dtype=dtype)
+        q = self.robot.data.root_quat_w[env_ids].to(device=device, dtype=dtype)
         w, x, y, z = torch.unbind(q, dim=-1)
-        yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))  # (N,)
+        yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
         cos = torch.cos(yaw)
         sin = torch.sin(yaw)
 
-        # build rotation matrices per env: rot = [[cos, -sin],[sin, cos]]
-        rot = torch.zeros((N, 2, 2), device=device, dtype=dtype)
+        rot = torch.zeros((env_ids.shape[0], 2, 2), device=device, dtype=dtype)
         rot[:, 0, 0] = cos
         rot[:, 0, 1] = -sin
         rot[:, 1, 0] = sin
         rot[:, 1, 1] = cos
 
-        # expand grid and apply rotation
-        grid_exp = grid_flat.expand(N, -1, -1)  # (N,HW,2)
-        rotated = torch.matmul(grid_exp, rot.transpose(1, 2))  # (N,HW,2)
+        rotated = torch.matmul(grid_local.expand(env_ids.shape[0], -1, -1), rot.transpose(1, 2))
+        world_pts = rotated + robot_pos_local.unsqueeze(1)
 
-        # world coordinates (in env-local frame) = robot_local + rotated
-        world_pts = rotated + robot_pos_local.unsqueeze(1)  # (N,HW,2)
-
-        # normalize to [-1,1] for grid_sample using toa bounds
         x_world = world_pts[..., 0]
         y_world = world_pts[..., 1]
         x_norm = 2.0 * (x_world - float(self.toa_x_min)) / float(self.toa_x_max - self.toa_x_min) - 1.0
         y_norm = 2.0 * (y_world - float(self.toa_y_min)) / float(self.toa_y_max - self.toa_y_min) - 1.0
-
-        sample_grid = torch.stack([x_norm, y_norm], dim=-1).view(N, crop_size, crop_size, 2)
-
-        # input maps: (N,1,Hmap,Wmap)
-        input_maps = self.toa_maps.unsqueeze(1).to(device=device, dtype=dtype)
+        sample_grid = torch.stack([x_norm, y_norm], dim=-1).view(env_ids.shape[0], crop_size, crop_size, 2)
 
         sampled = F.grid_sample(
-            input_maps,
+            self.toa_maps[env_ids].unsqueeze(1).to(device=device, dtype=dtype),
             sample_grid,
             mode="bilinear",
             padding_mode="border",
             align_corners=True,
         )
 
-        # clamp and normalize to [-1, 1] for SB3 image handling
         sampled = torch.clamp(sampled, min=0.0, max=255.0) / 255.0
         sampled = sampled * 2.0 - 1.0
         return sampled
+
+    def _save_robot_aligned_toa_map(self, env_id: int = 0, save_path: str | None = None, crop_size: int | None = None) -> str:
+        """Save the robot-aligned TOA map for one environment as an image."""
+        if save_path is None:
+            save_path = os.path.join(self.toa_output_dir, f"toa_aligned_env_{env_id:03d}_step_{self.step_count:06d}.png")
+
+        toa_map = self._build_robot_aligned_toa_map(
+            env_ids=torch.tensor([env_id], device=self.device),
+            crop_size=crop_size,
+        )[0, 0]
+        toa_map = ((toa_map + 1.0) * 0.5).detach().cpu().numpy()
+
+        plt.figure(figsize=(8, 8))
+        plt.imshow(toa_map.T, origin="lower", cmap="viridis_r")
+        plt.title(f"Robot-aligned TOA - env {env_id} - step {self.step_count}")
+        plt.xlabel("Body X")
+        plt.ylabel("Body Y")
+        plt.colorbar(label="Normalized TOA")
+        plt.tight_layout()
+        plt.savefig(save_path)
+        plt.close()
+        return save_path
+
+    def _build_robot_aligned_critic_toa(self, crop_size: int = 64) -> torch.Tensor:
+        """Build a robot-aligned, rotated and cropped TOA tensor for critic.
+
+        Returns tensor shape (num_envs, 1, crop_size, crop_size), values normalized [-1, 1].
+        """
+        return self._build_robot_aligned_toa_map(crop_size=crop_size)
 
     def _update_toa_cache(self, env_ids: torch.Tensor) -> None:
         if env_ids is None or len(env_ids) == 0:
@@ -356,11 +377,10 @@ class TutorialEnv(DirectRLEnv):
         # print("_pre_physics_step")
         self.actions = actions.clone()
 
-        # # Save TOA map periodically
-        # self.step_count += 1
-        # if self.step_count % self.toa_save_interval == 0:
-        #     self._save_first_env_toa()
-        #     self._save_first_env_toa_gradient()
+        # Save the first environment's robot-aligned TOA map periodically.
+        self.step_count += 1
+        if self.step_count % self.toa_save_interval == 0:
+            self._save_robot_aligned_toa_map(env_id=0)
 
     def _save_first_env_toa(self):
         """Save the TOA map of the first environment as an image."""
