@@ -279,8 +279,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         policy_kwargs["critic_features_extractor_class"] = CriticFeaturesExtractor
         policy_kwargs["actor_features_extractor_class"] = ActorFeaturesExtractor
         policy_kwargs["share_features_extractor"] = False
+    print(policy_kwargs)
     agent_cfg["policy_kwargs"] = policy_kwargs
-
+    print(agent_cfg)
     agent = RecurrentPPO(policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg)
     if args_cli.checkpoint is not None:
         agent = agent.load(args_cli.checkpoint, env, print_system_info=True)

@@ -412,9 +412,9 @@ class TutorialEnv(DirectRLEnv):
         self.actions = actions.clone()
 
         # Save the first environment's global TOA map with the robot-aligned crop box periodically.
-        self.step_count += 1
-        if self.step_count % self.toa_save_interval == 0:
-            self._save_first_env_toa()
+        # self.step_count += 1
+        # if self.step_count % self.toa_save_interval == 0:
+        #     self._save_first_env_toa()
 
     def _get_robot_aligned_toa_crop_corners(
         self,
