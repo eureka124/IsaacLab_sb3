@@ -276,6 +276,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         policy_kwargs["features_extractor_class"] = GodViewExtractor
     else:
         policy_kwargs["features_extractor_class"] = CustomCombinedExtractor
+        policy_kwargs["shared_extractor"] = False
     agent_cfg["policy_kwargs"] = policy_kwargs
 
     agent = RecurrentPPO(policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg)
