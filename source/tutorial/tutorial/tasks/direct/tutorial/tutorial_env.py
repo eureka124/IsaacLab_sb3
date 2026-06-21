@@ -28,15 +28,6 @@ class TutorialEnv(DirectRLEnv):
     def __init__(self, cfg: TutorialEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
 
-        # Update the observation space for camera to be uint8 [0, 255]
-        if isinstance(self.observation_space, gym.spaces.Dict) and "camera" in self.observation_space.spaces:
-            self.observation_space.spaces["camera"] = gym.spaces.Box(
-                low=0.0,
-                high=1.0,
-                shape=self.observation_space.spaces["camera"].shape,
-                dtype=np.float32,
-            )
-
         # print("__init__")
         # 创建可视化目标位置的标记
         self.target_pos = torch.zeros((self.cfg.scene.num_envs, 3), device=self.device)
@@ -631,56 +622,56 @@ class TutorialEnv(DirectRLEnv):
         obs = torch.cat((relative_position, last_action, vel_xy, yaw_rate), dim=-1)  # shape: (num_envs, 8)
 
         # Calculate privileged information (nearest 5 obstacles)
-        if len(self.obstacles) > 0:
-            # 1. Gather all obstacle positions: (num_envs, num_obstacles, 3)
-            all_obs_pos_w = torch.stack([obs.data.root_pos_w for obs in self.obstacles], dim=1)
-            # 2. Robot position: (num_envs, 1, 3)
-            robot_pos_w = self.robot.data.root_pos_w.unsqueeze(1)
-            # 3. Relative positions in world frame
-            rel_pos_w = all_obs_pos_w - robot_pos_w
-            # 4. Filter by distance (XY plane)
-            dists = torch.norm(rel_pos_w[..., :2], dim=-1)
-            # 5. Get 5 nearest
-            k = min(5, len(self.obstacles))
-            vals, indices = torch.topk(dists, k=k, largest=False)
+        # if len(self.obstacles) > 0:
+        #     # 1. Gather all obstacle positions: (num_envs, num_obstacles, 3)
+        #     all_obs_pos_w = torch.stack([obs.data.root_pos_w for obs in self.obstacles], dim=1)
+        #     # 2. Robot position: (num_envs, 1, 3)
+        #     robot_pos_w = self.robot.data.root_pos_w.unsqueeze(1)
+        #     # 3. Relative positions in world frame
+        #     rel_pos_w = all_obs_pos_w - robot_pos_w
+        #     # 4. Filter by distance (XY plane)
+        #     dists = torch.norm(rel_pos_w[..., :2], dim=-1)
+        #     # 5. Get 5 nearest
+        #     k = min(5, len(self.obstacles))
+        #     vals, indices = torch.topk(dists, k=k, largest=False)
 
-            # 6. Gather geometric features
-            # Create batch indices for gathering
-            batch_indices = torch.arange(self.num_envs, device=self.device).unsqueeze(1).expand(-1, k)
-            # Gather relative positions: (num_envs, k, 3)
-            selected_rel_pos_w = rel_pos_w[batch_indices, indices]
+        #     # 6. Gather geometric features
+        #     # Create batch indices for gathering
+        #     batch_indices = torch.arange(self.num_envs, device=self.device).unsqueeze(1).expand(-1, k)
+        #     # Gather relative positions: (num_envs, k, 3)
+        #     selected_rel_pos_w = rel_pos_w[batch_indices, indices]
 
-            # Rotate to body frame (consistent with other obs)
-            # Flatten to vector-process rotation
-            flat_rel_pos_w = selected_rel_pos_w.reshape(-1, 3)
-            flat_quats = self.robot.data.root_quat_w.repeat_interleave(k, dim=0)
-            flat_rel_pos_b = quat_rotate_inverse(flat_quats, flat_rel_pos_w)
-            selected_rel_pos_b = flat_rel_pos_b.reshape(self.num_envs, k, 3)
+        #     # Rotate to body frame (consistent with other obs)
+        #     # Flatten to vector-process rotation
+        #     flat_rel_pos_w = selected_rel_pos_w.reshape(-1, 3)
+        #     flat_quats = self.robot.data.root_quat_w.repeat_interleave(k, dim=0)
+        #     flat_rel_pos_b = quat_rotate_inverse(flat_quats, flat_rel_pos_w)
+        #     selected_rel_pos_b = flat_rel_pos_b.reshape(self.num_envs, k, 3)
 
-            # Extract XY: (num_envs, k, 2)
-            feat_xy = selected_rel_pos_b[..., :2]
+        #     # Extract XY: (num_envs, k, 2)
+        #     feat_xy = selected_rel_pos_b[..., :2]
 
-            # Gather radii: (num_envs, k)
-            selected_radii = self.obstacle_radii_tensor[indices]
+        #     # Gather radii: (num_envs, k)
+        #     selected_radii = self.obstacle_radii_tensor[indices]
 
-            # Combine: (num_envs, k, 3) -> [x, y, r]
-            critic_obs = torch.cat([feat_xy, selected_radii.unsqueeze(-1)], dim=-1)
-            # Flatten: (num_envs, k*3)
-            critic_obs = critic_obs.reshape(self.num_envs, -1)
+        #     # Combine: (num_envs, k, 3) -> [x, y, r]
+        #     critic_obs = torch.cat([feat_xy, selected_radii.unsqueeze(-1)], dim=-1)
+        #     # Flatten: (num_envs, k*3)
+        #     critic_obs = critic_obs.reshape(self.num_envs, -1)
 
-            # Pad if less than 5
-            if k < 5:
-                padding = torch.zeros((self.num_envs, (5 - k) * 3), device=self.device)
-                critic_obs = torch.cat([critic_obs, padding], dim=-1)
-        else:
-            critic_obs = torch.zeros((self.num_envs, 15), device=self.device)
+        #     # Pad if less than 5
+        #     if k < 5:
+        #         padding = torch.zeros((self.num_envs, (5 - k) * 3), device=self.device)
+        #         critic_obs = torch.cat([critic_obs, padding], dim=-1)
+        # else:
+        #     critic_obs = torch.zeros((self.num_envs, 15), device=self.device)
 
         observations = {
             "policy": {
                 "robot-state": obs,
                 "camera": camera_observation,
-                "critic-state": torch.zeros_like(critic_obs),
-                "critic-toa": torch.clamp(self.toa_maps.unsqueeze(1), 0.0, 255.0) / 255.0,
+                # "critic-state": torch.zeros_like(critic_obs),
+                # "critic-toa": torch.clamp(self.toa_maps.unsqueeze(1), 0.0, 255.0) / 255.0,
             },
         }
         # print("Observations:", {k: v for k, v in observations["policy"].items()})
