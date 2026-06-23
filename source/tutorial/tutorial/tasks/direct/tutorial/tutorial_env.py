@@ -1434,7 +1434,7 @@ def compute_rewards(
     penalty_obstacle: torch.Tensor,
     penalty_yaw: torch.Tensor,
 ):
-    total_reward = reward_toa * 1.0
+    total_reward = reward_toa * 10.0
     total_reward = total_reward - penalty_yaw * 1.0
     # total_reward = total_reward + reward_velocity * 0.5
     # total_reward = total_reward - penalty_obstacle
