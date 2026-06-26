@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import skfmm
+from collections.abc import Sequence
 
 
 def _rectangle_sdf(
@@ -22,11 +23,21 @@ def _rectangle_sdf(
     return outside_dist + inside_dist
 
 
+def _circle_sdf(
+    grid_x: np.ndarray,
+    grid_y: np.ndarray,
+    center_xy: tuple[float, float],
+    radius: float,
+    inflation: float,
+) -> np.ndarray:
+    return np.sqrt((grid_x - center_xy[0]) ** 2 + (grid_y - center_xy[1]) ** 2) - (float(radius) + inflation)
+
+
 def build_toa_map(
     goal_xy: np.ndarray,
     grid_xs: np.ndarray,
     grid_ys: np.ndarray,
-    obstacles: list[tuple[tuple[float, float, float], tuple[float, float, float]]],
+    obstacles: Sequence[tuple[tuple[float, ...], tuple[float, ...] | float]],
     robot_radius: float,
     safe_distance: float,
     slow_speed: float,
@@ -34,17 +45,31 @@ def build_toa_map(
     grid_x, grid_y = np.meshgrid(grid_xs, grid_ys, indexing="xy")
     obstacle_sdf = np.full_like(grid_x, 1e6, dtype=np.float32)
 
-    for obstacle_pos, obstacle_size in obstacles:
-        obstacle_sdf = np.minimum(
-            obstacle_sdf,
-            _rectangle_sdf(
-                grid_x,
-                grid_y,
-                obstacle_pos[:2],
-                obstacle_size[:2],
-                robot_radius,
-            ).astype(np.float32),
-        )
+    for obstacle_pos, obstacle_shape in obstacles:
+        obstacle_pos_xy = (float(obstacle_pos[0]), float(obstacle_pos[1]))
+        if np.isscalar(obstacle_shape):
+            obstacle_sdf = np.minimum(
+                obstacle_sdf,
+                _circle_sdf(
+                    grid_x,
+                    grid_y,
+                    obstacle_pos_xy,
+                    float(obstacle_shape),
+                    robot_radius,
+                ).astype(np.float32),
+            )
+        else:
+            obstacle_size = np.asarray(obstacle_shape, dtype=np.float32)
+            obstacle_sdf = np.minimum(
+                obstacle_sdf,
+                _rectangle_sdf(
+                    grid_x,
+                    grid_y,
+                    obstacle_pos_xy,
+                    (float(obstacle_size[0]), float(obstacle_size[1])),
+                    robot_radius,
+                ).astype(np.float32),
+            )
 
     obstacle_mask = obstacle_sdf <= 0.0
     clearance = np.maximum(obstacle_sdf, 0.0)
@@ -110,9 +135,10 @@ def compute_toa_gradient(
     toa_x_max: float,
     toa_y_min: float,
     toa_y_max: float,
-    device: torch.device,
+    device: torch.device | str,
 ) -> torch.Tensor:
     """Compute TOA map gradient in world XY at given positions."""
+    device = torch.device(device)
     dx = float(toa_grid_xs[1] - toa_grid_xs[0])
     delta = torch.tensor([dx, 0.0], device=device, dtype=positions_xy.dtype)
     delta_y = torch.tensor([0.0, dx], device=device, dtype=positions_xy.dtype)

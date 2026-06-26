@@ -11,7 +11,8 @@ import omni.timeline
 from isaaclab.envs import DirectRLEnv
 from isaaclab.assets import RigidObject
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
-from .tutorial_env_cfg import TutorialEnvCfg, maze_obstacles
+
+from .tutorial_env_cfg import TutorialEnvCfg
 from . import TOA
 from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG
 from isaaclab.markers import VisualizationMarkers
@@ -154,19 +155,26 @@ class TutorialEnv(DirectRLEnv):
             device=self.device,
         )
 
-        from .tutorial_env_cfg import maze_obstacles
+        toa_obstacles = self._get_toa_obstacles()
 
         for i, goal_xy in enumerate(self.corner_coords):
             toa_map = TOA.build_toa_map(
                 goal_xy=goal_xy,
                 grid_xs=self.toa_grid_xs,
                 grid_ys=self.toa_grid_ys,
-                obstacles=maze_obstacles,  # Static maze only
+                obstacles=toa_obstacles,
                 robot_radius=self.toa_robot_radius,
                 safe_distance=self.toa_safe_distance,
                 slow_speed=self.toa_slow_speed,
             )
             self.precomputed_toa_maps[i] = torch.from_numpy(toa_map).to(self.device)
+
+    def _get_toa_obstacles(self) -> list[tuple[tuple[float, float, float], float]]:
+        obstacles = []
+        for obstacle, radius in zip(self.obstacles, self.obstacle_radii):
+            position = obstacle.data.default_root_state[0, :3].detach().cpu().numpy()
+            obstacles.append((tuple(float(value) for value in position), float(radius)))
+        return obstacles
 
     def _sample_toa_from_maps(
         self,
@@ -198,7 +206,7 @@ class TutorialEnv(DirectRLEnv):
             self.device,
         )
 
-    def _update_toa_cache(self, env_ids: torch.Tensor) -> None:
+    def _update_toa_cache(self, env_ids) -> None:
         if env_ids is None or len(env_ids) == 0:
             return
 
@@ -290,7 +298,7 @@ class TutorialEnv(DirectRLEnv):
         # skfmm 返回的 grid 索引通常是 [y, x]，所以转置一下
         plt.imshow(
             toa_map.T,
-            extent=[self.toa_x_min, self.toa_x_max, self.toa_y_min, self.toa_y_max],
+            extent=(self.toa_x_min, self.toa_x_max, self.toa_y_min, self.toa_y_max),
             origin="lower",
             cmap="viridis_r",  # 使用反向色图，较小值（目标）显示为深色，障碍物/远端显示为浅色
         )
@@ -303,22 +311,12 @@ class TutorialEnv(DirectRLEnv):
         robot_xy = (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
         plt.plot(robot_xy[0], robot_xy[1], "bo", markersize=10, label="Robot")
 
-        # 绘制迷宫墙壁 (maze_obstacles)
-        from matplotlib.patches import Rectangle
+        from matplotlib.patches import Circle
 
-        for pos, size in maze_obstacles:
-            left = pos[0] - size[0] / 2.0
-            bottom = pos[1] - size[1] / 2.0
-            rect = Rectangle(
-                (left, bottom),
-                size[0],
-                size[1],
-                linewidth=1,
-                edgecolor="black",
-                facecolor="gray",
-                alpha=0.5,
-            )
-            plt.gca().add_patch(rect)
+        for obstacle, radius in zip(self.obstacles, self.obstacle_radii):
+            pos = obstacle.data.default_root_state[0, :2].detach().cpu().numpy()
+            circle = Circle((pos[0], pos[1]), radius, linewidth=1, edgecolor="black", facecolor="gray", alpha=0.5)
+            plt.gca().add_patch(circle)
 
         plt.colorbar(label="Time of Arrival")
         plt.title(f"TOA Map - Step {self.step_count}")
@@ -396,7 +394,7 @@ class TutorialEnv(DirectRLEnv):
         toa_map = self.toa_maps[0].detach().cpu().numpy()
         plt.imshow(
             toa_map.T,
-            extent=[self.toa_x_min, self.toa_x_max, self.toa_y_min, self.toa_y_max],
+            extent=(self.toa_x_min, self.toa_x_max, self.toa_y_min, self.toa_y_max),
             origin="lower",
             cmap="viridis_r",
             alpha=0.3,
@@ -421,24 +419,12 @@ class TutorialEnv(DirectRLEnv):
         robot_xy = (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
         plt.plot(robot_xy[0], robot_xy[1], "bo", markersize=10, label="Robot")
 
-        # 4. 绘制迷宫墙壁 (maze_obstacles)
-        from matplotlib.patches import Rectangle
+        from matplotlib.patches import Circle
 
-        for pos, size in maze_obstacles:
-            # pos 是中心点 (x, y, z)，size 是 (sx, sy, sz)
-            # 计算左下角坐标
-            left = pos[0] - size[0] / 2.0
-            bottom = pos[1] - size[1] / 2.0
-            rect = Rectangle(
-                (left, bottom),
-                size[0],
-                size[1],
-                linewidth=1,
-                edgecolor="black",
-                facecolor="gray",
-                alpha=0.5,
-            )
-            plt.gca().add_patch(rect)
+        for obstacle, radius in zip(self.obstacles, self.obstacle_radii):
+            pos = obstacle.data.default_root_state[0, :2].detach().cpu().numpy()
+            circle = Circle((pos[0], pos[1]), radius, linewidth=1, edgecolor="black", facecolor="gray", alpha=0.5)
+            plt.gca().add_patch(circle)
 
         plt.title(f"TOA Gradient Field (-grad) - Step {self.step_count}")
         plt.xlabel("X (m)")
