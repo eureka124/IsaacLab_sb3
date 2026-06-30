@@ -116,18 +116,33 @@ class TutorialEnv(DirectRLEnv):
         if not os.path.exists(self.toa_grad_output_dir):
             os.makedirs(self.toa_grad_output_dir)
 
-        # Collect obstacles from scene
+        # Collect obstacles from scene (cylinders and maze cuboids)
         self.obstacles = []
         self.obstacle_radii = []
-        # We assume Obstacle_0 to Obstacle_59 exist in scene as per config
-        for i in range(60):
-            name = f"Obstacle_{i}"
-            # Check if it exists in the scene dictionary
+        self.obstacle_shapes = []
+        obstacle_names = [f"Obstacle_{i}" for i in range(60)] + [f"maze_Obstacle_{i}" for i in range(8)]
+        for name in obstacle_names:
             if name in self.scene.keys():
                 obs = self.scene[name]
                 self.obstacles.append(obs)
-                # Get radius from config spawn.
-                self.obstacle_radii.append(obs.cfg.spawn.radius)
+
+                spawn = obs.cfg.spawn
+                if hasattr(spawn, "radius"):
+                    radius = float(spawn.radius)
+                    self.obstacle_radii.append(radius)
+                    self.obstacle_shapes.append(("circle", radius))
+                elif hasattr(spawn, "size"):
+                    size = getattr(spawn, "size", None)
+                    if size is not None:
+                        size_xy = tuple(float(value) for value in size[:2])
+                    else:
+                        size_xy = (0.0, 0.0)
+                    effective_radius = 0.5 * max(size_xy[0], size_xy[1])
+                    self.obstacle_radii.append(effective_radius)
+                    self.obstacle_shapes.append(("rect", size_xy))
+                else:
+                    self.obstacle_radii.append(0.0)
+                    self.obstacle_shapes.append(("circle", 0.0))
 
         if self.obstacles:
             self.obstacle_radii_tensor = torch.tensor(self.obstacle_radii, device=self.device)
@@ -169,11 +184,20 @@ class TutorialEnv(DirectRLEnv):
             )
             self.precomputed_toa_maps[i] = torch.from_numpy(toa_map).to(self.device)
 
-    def _get_toa_obstacles(self) -> list[tuple[tuple[float, float, float], float]]:
+    def _get_toa_obstacles(self) -> list[tuple[tuple[float, float, float], tuple[float, float, float] | float]]:
         obstacles = []
-        for obstacle, radius in zip(self.obstacles, self.obstacle_radii):
+        for obstacle, obstacle_shape in zip(self.obstacles, self.obstacle_shapes):
             position = obstacle.data.default_root_state[0, :3].detach().cpu().numpy()
-            obstacles.append((tuple(float(value) for value in position), float(radius)))
+            if obstacle_shape[0] == "circle":
+                obstacles.append((tuple(float(value) for value in position), float(obstacle_shape[1])))
+            else:
+                size_xy = obstacle_shape[1]
+                obstacles.append(
+                    (
+                        tuple(float(value) for value in position),
+                        (float(size_xy[0]), float(size_xy[1])),
+                    )
+                )
         return obstacles
 
     def _sample_toa_from_maps(
@@ -280,11 +304,11 @@ class TutorialEnv(DirectRLEnv):
         # print("_pre_physics_step")
         self.actions = actions.clone()
 
-        # # Save TOA map periodically
-        # self.step_count += 1
-        # if self.step_count % self.toa_save_interval == 0:
-        #     self._save_first_env_toa()
-        #     self._save_first_env_toa_gradient()
+        # Save TOA map periodically
+        self.step_count += 1
+        if self.step_count < 1000 and self.step_count % self.toa_save_interval == 0:
+            self._save_first_env_toa()
+            self._save_first_env_toa_gradient()
 
     def _save_first_env_toa(self):
         """Save the TOA map of the first environment as an image."""
@@ -311,12 +335,27 @@ class TutorialEnv(DirectRLEnv):
         robot_xy = (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
         plt.plot(robot_xy[0], robot_xy[1], "bo", markersize=10, label="Robot")
 
-        from matplotlib.patches import Circle
+        from matplotlib.patches import Circle, Rectangle
 
-        for obstacle, radius in zip(self.obstacles, self.obstacle_radii):
+        for obstacle, obstacle_shape in zip(self.obstacles, self.obstacle_shapes):
             pos = obstacle.data.default_root_state[0, :2].detach().cpu().numpy()
-            circle = Circle((pos[0], pos[1]), radius, linewidth=1, edgecolor="black", facecolor="gray", alpha=0.5)
-            plt.gca().add_patch(circle)
+            if obstacle_shape[0] == "circle":
+                radius = float(obstacle_shape[1])
+                patch = Circle((pos[0], pos[1]), radius, linewidth=1, edgecolor="black", facecolor="gray", alpha=0.5)
+            else:
+                size_xy = obstacle_shape[1]
+                half_w = float(size_xy[0]) * 0.5
+                half_h = float(size_xy[1]) * 0.5
+                patch = Rectangle(
+                    (pos[0] - half_w, pos[1] - half_h),
+                    float(size_xy[0]),
+                    float(size_xy[1]),
+                    linewidth=1,
+                    edgecolor="black",
+                    facecolor="gray",
+                    alpha=0.5,
+                )
+            plt.gca().add_patch(patch)
 
         plt.colorbar(label="Time of Arrival")
         plt.title(f"TOA Map - Step {self.step_count}")
@@ -419,12 +458,27 @@ class TutorialEnv(DirectRLEnv):
         robot_xy = (self.robot.data.root_pos_w[0, :2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
         plt.plot(robot_xy[0], robot_xy[1], "bo", markersize=10, label="Robot")
 
-        from matplotlib.patches import Circle
+        from matplotlib.patches import Circle, Rectangle
 
-        for obstacle, radius in zip(self.obstacles, self.obstacle_radii):
+        for obstacle, obstacle_shape in zip(self.obstacles, self.obstacle_shapes):
             pos = obstacle.data.default_root_state[0, :2].detach().cpu().numpy()
-            circle = Circle((pos[0], pos[1]), radius, linewidth=1, edgecolor="black", facecolor="gray", alpha=0.5)
-            plt.gca().add_patch(circle)
+            if obstacle_shape[0] == "circle":
+                radius = float(obstacle_shape[1])
+                patch = Circle((pos[0], pos[1]), radius, linewidth=1, edgecolor="black", facecolor="gray", alpha=0.5)
+            else:
+                size_xy = obstacle_shape[1]
+                half_w = float(size_xy[0]) * 0.5
+                half_h = float(size_xy[1]) * 0.5
+                patch = Rectangle(
+                    (pos[0] - half_w, pos[1] - half_h),
+                    float(size_xy[0]),
+                    float(size_xy[1]),
+                    linewidth=1,
+                    edgecolor="black",
+                    facecolor="gray",
+                    alpha=0.5,
+                )
+            plt.gca().add_patch(patch)
 
         plt.title(f"TOA Gradient Field (-grad) - Step {self.step_count}")
         plt.xlabel("X (m)")

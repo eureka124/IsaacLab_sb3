@@ -74,36 +74,36 @@ class MySceneCfg(InteractiveSceneCfg):
     )
 
 
-# # 定义迷宫障碍物
-# maze_obstacles = [
-#     # ((x, y, z), (sx, sy, sz))
-#     ((-7.5, -12.0, 2.0), (10.0, 1, 4.0)),
-#     ((-12.0, -6.5, 2.0), (1, 10.0, 4.0)),
-#     ((7.5, -12.0, 2.0), (10.0, 1, 4.0)),
-#     ((12.0, -6.5, 2.0), (1, 10.0, 4.0)),
-#     ((-6.5, 12.0, 2.0), (10.0, 1, 4.0)),
-#     ((-12.0, 7.5, 2.0), (1, 10.0, 4.0)),
-#     ((6.5, 12.0, 2.0), (10.0, 1, 4.0)),
-#     ((12.0, 7.5, 2.0), (1, 10.0, 4.0)),
-# ]
+# 定义迷宫障碍物
+maze_obstacles = [
+    # ((x, y, z), (sx, sy, sz))
+    ((-7.5, -12.0, 2.0), (10.0, 1, 4.0)),
+    ((-12.0, -6.5, 2.0), (1, 10.0, 4.0)),
+    ((7.5, -12.0, 2.0), (10.0, 1, 4.0)),
+    ((12.0, -6.5, 2.0), (1, 10.0, 4.0)),
+    ((-6.5, 12.0, 2.0), (10.0, 1, 4.0)),
+    ((-12.0, 7.5, 2.0), (1, 10.0, 4.0)),
+    ((6.5, 12.0, 2.0), (10.0, 1, 4.0)),
+    ((12.0, 7.5, 2.0), (1, 10.0, 4.0)),
+]
 
-# for i, (pos, size) in enumerate(maze_obstacles):
-#     obstacle_cfg = RigidObjectCfg(
-#         prim_path=f"{{ENV_REGEX_NS}}/maze_Obstacle_{i}",
-#         spawn=sim_utils.CuboidCfg(
-#             size=size,
-#             rigid_props=sim_utils.RigidBodyPropertiesCfg(
-#                 kinematic_enabled=False,
-#                 disable_gravity=True,
-#                 linear_damping=1000.0,
-#                 angular_damping=1000.0,
-#             ),
-#             mass_props=sim_utils.MassPropertiesCfg(mass=10000.0),
-#             collision_props=sim_utils.CollisionPropertiesCfg(),
-#         ),
-#         init_state=RigidObjectCfg.InitialStateCfg(pos=pos),
-#     )
-#     setattr(MySceneCfg, f"maze_Obstacle_{i}", obstacle_cfg)
+for i, (pos, size) in enumerate(maze_obstacles):
+    obstacle_cfg = RigidObjectCfg(
+        prim_path=f"{{ENV_REGEX_NS}}/maze_Obstacle_{i}",
+        spawn=sim_utils.CuboidCfg(
+            size=size,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=False,
+                disable_gravity=True,
+                linear_damping=1000.0,
+                angular_damping=1000.0,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass=10000.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=pos),
+    )
+    setattr(MySceneCfg, f"maze_Obstacle_{i}", obstacle_cfg)
 
 
 # 定义多个静止障碍物的位置
