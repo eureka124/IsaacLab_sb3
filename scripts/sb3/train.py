@@ -203,6 +203,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     run_info = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     date = datetime.now().strftime("%Y-%m-%d")
     log_root_path = os.path.abspath(os.path.join("logs", date, args_cli.name if args_cli.name else "default"))
+    os.makedirs(log_root_path, exist_ok=True)
     if args_cli.diff_file:
         with open(args_cli.diff_file, "r") as f:
             diff_content = f.read()
@@ -285,7 +286,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         policy_kwargs["features_extractor_class"] = GodViewExtractor
     else:
         policy_kwargs["features_extractor_class"] = CustomCombinedExtractor
-        policy_kwargs["share_features_extractor"] = False
+        policy_kwargs["share_features_extractor"] = True
     agent_cfg["policy_kwargs"] = policy_kwargs
 
     agent = RecurrentPPO(policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg)
