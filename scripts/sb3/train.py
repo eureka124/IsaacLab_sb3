@@ -204,11 +204,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     date = datetime.now().strftime("%Y-%m-%d")
     log_root_path = os.path.abspath(os.path.join("logs", date, args_cli.name if args_cli.name else "default"))
     os.makedirs(log_root_path, exist_ok=True)
-    if args_cli.diff_file:
-        with open(args_cli.diff_file, "r") as f:
-            diff_content = f.read()
-        with open(os.path.join(log_root_path, "diff.txt"), "w") as f:
-            f.write(diff_content)
+
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
     # The Ray Tune workflow extracts experiment name using the logging line below, hence, do not change it (see PR #2346, comment-2819298849)
     print(f"Exact experiment name requested from command line: {run_info}")
@@ -216,7 +212,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # dump the configuration into log-directory
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
-
+    if args_cli.diff_file:
+        with open(args_cli.diff_file, "r") as f:
+            diff_content = f.read()
+        with open(os.path.join(log_dir, "diff.txt"), "w") as f:
+            f.write(diff_content)
     # save command used to run the script
     command = " ".join(sys.orig_argv)
     (Path(log_dir) / "command.txt").write_text(command)
