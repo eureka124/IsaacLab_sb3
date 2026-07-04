@@ -80,6 +80,10 @@ parser.add_argument(
     default=None,
     help="Automatically configured by Ray integration, otherwise None.",
 )
+parser.add_argument(
+    "--diff_file",
+    default=None,
+)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -199,6 +203,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     run_info = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     date = datetime.now().strftime("%Y-%m-%d")
     log_root_path = os.path.abspath(os.path.join("logs", date, args_cli.name if args_cli.name else "default"))
+    os.makedirs(log_root_path, exist_ok=True)
+    if args_cli.diff_file:
+        with open(args_cli.diff_file, "r") as f:
+            diff_content = f.read()
+        with open(os.path.join(log_root_path, "diff.txt"), "w") as f:
+            f.write(diff_content)
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
     # The Ray Tune workflow extracts experiment name using the logging line below, hence, do not change it (see PR #2346, comment-2819298849)
     print(f"Exact experiment name requested from command line: {run_info}")
