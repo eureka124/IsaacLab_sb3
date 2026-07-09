@@ -20,6 +20,8 @@ from isaaclab.utils.math import quat_from_matrix
 from matplotlib import pyplot as plt
 import gymnasium as gym
 import numpy as np
+from pathlib import Path
+from PIL import Image
 
 
 class TutorialEnv(DirectRLEnv):
@@ -144,8 +146,44 @@ class TutorialEnv(DirectRLEnv):
         else:
             self.obstacle_radii_tensor = torch.zeros((0,), device=self.device)
 
-        # Precompute TOA maps for 4 corners
-        self._precompute_corner_toa_maps()
+        self._init_toa_crop_grid()
+
+        # Depth image saving
+        self.save_depth_debug = True
+        self.depth_debug_max_frames = 2000
+        self.depth_debug_frame_id = 0
+        self.depth_debug_fps = 24
+        self.depth_debug_video_written = False
+
+        self.depth_debug_dir = Path(os.getcwd()) / "outputs" / "depth_frames"
+        self.depth_debug_dir.mkdir(parents=True, exist_ok=True)
+        
+    def _init_toa_crop_grid(self):
+        crop_size = int(self.critic_toa_crop_size)
+        dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
+        half_extent = (crop_size / 2.0) * dx
+
+        xs = torch.linspace(
+            -half_extent + dx / 2.0,
+            half_extent - dx / 2.0,
+            steps=crop_size,
+            device=self.device,
+            dtype=torch.float32,
+        )
+        ys = torch.linspace(
+            -half_extent + dx / 2.0,
+            half_extent - dx / 2.0,
+            steps=crop_size,
+            device=self.device,
+            dtype=torch.float32,
+        )
+
+        grid_x, grid_y = torch.meshgrid(xs, ys, indexing="xy")
+        self.toa_crop_grid_local = torch.stack(
+            [grid_x, grid_y],
+            dim=-1,
+        ).view(1, crop_size * crop_size, 2)
+        self.toa_crop_size_cached = crop_size
 
     def _precompute_corner_toa_maps(self) -> None:
         """Precompute TOA maps for the 4 corner goal positions."""
@@ -223,32 +261,30 @@ class TutorialEnv(DirectRLEnv):
 
         The returned map is centered on the robot and rotated by its yaw so the
         forward direction always points to the right in the output image.
-
-        Args:
-            env_ids: Optional subset of environments. If omitted, uses all envs.
-            crop_size: Output resolution. Defaults to ``self.critic_toa_crop_size``.
-
-        Returns:
-            Tensor with shape (N, 1, crop_size, crop_size), normalized to [-1, 1].
         """
         device = self.device
         dtype = torch.float32
-        crop_size = int(crop_size if crop_size is not None else getattr(self, "critic_toa_crop_size", 64))
+        crop_size = int(crop_size if crop_size is not None else getattr(self, "critic_toa_crop_size", 16))
 
         if env_ids is None:
             env_ids = torch.arange(self.num_envs, device=device)
         else:
             env_ids = env_ids.to(device=device, dtype=torch.long)
 
-        dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
-        half_extent = (crop_size / 2.0) * dx
+        # 使用提前缓存好的局部采样网格，避免每步重复 linspace / meshgrid / stack
+        if crop_size != self.toa_crop_size_cached:
+            raise ValueError(
+                f"Cached TOA crop grid has size {self.toa_crop_size_cached}, "
+                f"but requested crop_size={crop_size}. "
+                "Please rebuild the crop grid or use self.critic_toa_crop_size."
+            )
 
-        xs = torch.linspace(-half_extent + dx / 2.0, half_extent - dx / 2.0, steps=crop_size, device=device, dtype=dtype)
-        ys = torch.linspace(-half_extent + dx / 2.0, half_extent - dx / 2.0, steps=crop_size, device=device, dtype=dtype)
-        grid_x, grid_y = torch.meshgrid(xs, ys, indexing="xy")
-        grid_local = torch.stack([grid_x, grid_y], dim=-1).view(1, crop_size * crop_size, 2)
+        grid_local = self.toa_crop_grid_local
 
-        robot_pos_local = (self.robot.data.root_pos_w[env_ids, :2] - self.scene.env_origins[env_ids, :2]).to(device=device, dtype=dtype)
+        robot_pos_local = (
+            self.robot.data.root_pos_w[env_ids, :2]
+            - self.scene.env_origins[env_ids, :2]
+        ).to(device=device, dtype=dtype)
 
         q = self.robot.data.root_quat_w[env_ids].to(device=device, dtype=dtype)
         w, x, y, z = torch.unbind(q, dim=-1)
@@ -305,11 +341,12 @@ class TutorialEnv(DirectRLEnv):
         plt.close()
         return save_path
 
-    def _build_robot_aligned_critic_toa(self, crop_size: int = 64) -> torch.Tensor:
+    def _build_robot_aligned_critic_toa(self, crop_size: int = 16) -> torch.Tensor:
         """Build a robot-aligned, rotated and cropped TOA tensor for critic.
 
         Returns tensor shape (num_envs, 1, crop_size, crop_size), values normalized [-1, 1].
         """
+
         return self._build_robot_aligned_toa_map(crop_size=crop_size)
 
     def _update_toa_cache(self, env_ids) -> None:
@@ -422,7 +459,7 @@ class TutorialEnv(DirectRLEnv):
         crop_size: int | None = None,
     ) -> np.ndarray:
         """Return the four crop corners in env-local coordinates for visualization."""
-        crop_size = int(crop_size if crop_size is not None else getattr(self, "critic_toa_crop_size", 64))
+        crop_size = int(crop_size if crop_size is not None else getattr(self, "critic_toa_crop_size", 16))
         dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
         half_extent = (crop_size / 2.0) * dx
 
@@ -806,18 +843,21 @@ class TutorialEnv(DirectRLEnv):
 
     def _get_norm_depth_image(self) -> torch.Tensor:
         depth_frame = self.scene["camera"].data.output["distance_to_image_plane"].clone()
+        # print(depth_frame.shape)
 
         # Normalize camera tensor to NCHW before pooling.
         # Common layouts from sensor output are NHWC (last dim = 1) or NHW.
-        if depth_frame.dim() == 4 and depth_frame.shape[-1] == 1:
-            depth_frame = depth_frame.permute(0, 3, 1, 2)
-        elif depth_frame.dim() == 3:
-            depth_frame = depth_frame.unsqueeze(1)
-        elif depth_frame.dim() != 4:
-            raise RuntimeError(f"Unexpected raw depth tensor shape: {tuple(depth_frame.shape)}")
+        depth_frame = depth_frame.permute(0, 3, 1, 2)
 
         # 最小池化降采样 (kernel_size=4, stride=4) 从 (48, 64) 到 (12, 16)
         depth_frame = -torch.nn.functional.max_pool2d(-depth_frame, kernel_size=4, stride=4)
+        self._save_depth_debug_frames(
+            depth_nchw=depth_frame,
+            env_id=0,
+            channel=0,
+            normalized=True,
+            invert=False,
+        )
 
         # 归一化深度图
         max_vals = 10.0  # 相机最远探测距离m
@@ -831,6 +871,9 @@ class TutorialEnv(DirectRLEnv):
         depth_frame = depth_frame / max_vals  # 归一化到 [0, 1]
         depth_frame = depth_frame * 2.0 - 1.0  # 映射到 [-1, 1]
         # print(depth_norm.shape) # (env_num, 1, 12, 16)
+        # 保存第 0 个环境的前 200 帧深度图
+
+
         return depth_frame  # shape:[env_num, 1, 12, 16]
 
     def _get_observations(self) -> dict:
@@ -1343,6 +1386,101 @@ class TutorialEnv(DirectRLEnv):
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         w, x, y, z = torch.unbind(target_quat, dim=-1)
         self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(-1)
+
+    def _save_depth_debug_frames(
+        self,
+        depth_nchw: torch.Tensor,
+        env_id: int = 0,
+        channel: int = 0,
+        normalized: bool = False,
+        invert: bool = False,
+        max_depth: float = 10.0,
+    ) -> None:
+        """Save the first N depth frames of one environment.
+
+        Args:
+            depth_nchw: Tensor with shape [num_envs, channel, height, width].
+            env_id: Which environment to save.
+            channel: Which channel to save.
+            normalized: True if depth is already normalized to [-1, 1].
+            invert: If True, closer objects become brighter.
+            max_depth: Used only when normalized=False.
+        """
+        if not getattr(self, "save_depth_debug", False):
+            return
+
+        if self.depth_debug_frame_id >= self.depth_debug_max_frames:
+            if not self.depth_debug_video_written:
+                self._make_depth_debug_video(env_id=env_id)
+                self.depth_debug_video_written = True
+            return
+
+        if depth_nchw.dim() != 4:
+            raise RuntimeError(f"Expected depth tensor [N, C, H, W], got {tuple(depth_nchw.shape)}")
+
+        # 取第 env_id 个环境、第 channel 个通道
+        img = depth_nchw[env_id, channel].detach()
+
+        # 清理 NaN / Inf
+        if normalized:
+            img = torch.nan_to_num(img, nan=1.0, posinf=1.0, neginf=-1.0)
+            # [-1, 1] -> [0, 1]
+            img01 = (img + 1.0) * 0.5
+        else:
+            img = torch.nan_to_num(img, nan=max_depth, posinf=max_depth, neginf=0.0)
+            img = torch.clamp(img, min=0.0, max=max_depth)
+            # [0, max_depth] -> [0, 1]
+            img01 = img / max_depth
+
+        img01 = torch.clamp(img01, 0.0, 1.0)
+
+        # 可选：反转灰度。默认远处更亮；invert=True 后近处更亮
+        if invert:
+            img01 = 1.0 - img01
+
+        img_u8 = (img01 * 255.0).to(torch.uint8).cpu().numpy()
+
+        save_path = self.depth_debug_dir / f"depth_env{env_id:03d}_{self.depth_debug_frame_id:04d}.png"
+        Image.fromarray(img_u8, mode="L").save(save_path)
+
+        self.depth_debug_frame_id += 1
+
+        if self.depth_debug_frame_id == self.depth_debug_max_frames:
+            self._make_depth_debug_video(env_id=env_id)
+            self.depth_debug_video_written = True
+
+    def _make_depth_debug_video(self, env_id: int = 0) -> None:
+        """Make an mp4 video from saved depth frames."""
+        try:
+            import imageio.v2 as imageio
+        except ImportError:
+            print("imageio is not installed. Run: pip install imageio imageio-ffmpeg")
+            return
+
+        frame_files = sorted(self.depth_debug_dir.glob(f"depth_env{env_id:03d}_*.png"))
+
+        if len(frame_files) == 0:
+            print("No depth frames found, skip video creation.")
+            return
+
+        video_path = self.depth_debug_dir / f"depth_env{env_id:03d}_first{len(frame_files)}.mp4"
+
+        try:
+            with imageio.get_writer(str(video_path), fps=self.depth_debug_fps, codec="libx264") as writer:
+                for frame_file in frame_files:
+                    frame = imageio.imread(frame_file)
+
+                    # 灰度图转 RGB，避免部分播放器打不开单通道 mp4
+                    if frame.ndim == 2:
+                        frame = np.stack([frame, frame, frame], axis=-1)
+
+                    writer.append_data(frame)
+
+            print(f"Saved depth video to: {video_path}")
+
+        except Exception as e:
+            print(f"Failed to create depth video: {e}")
+            print(f"Frames are still saved in: {self.depth_debug_dir}")
 
 
 class DepthImageBuffer:
