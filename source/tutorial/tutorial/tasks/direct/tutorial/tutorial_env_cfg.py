@@ -199,7 +199,7 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     decimation = 5  # 5个dt进行一次决策
     episode_length_s = 40  # 导航任务最长时间40s
     # critic TOA crop size (pixels)
-    critic_toa_crop_size: int = 64
+    critic_toa_crop_size: int = 16
 
     action_space = spaces.Box(
         low=np.array([-0.1, -0.5, -np.pi / 3], dtype=np.float32),  # 每个维度的最小值

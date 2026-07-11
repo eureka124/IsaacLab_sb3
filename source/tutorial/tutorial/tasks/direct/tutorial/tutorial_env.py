@@ -212,7 +212,7 @@ class TutorialEnv(DirectRLEnv):
             )
             for pos, radius, _height in obstacle_positions
         ]
-        toa_static_obstacles = list(maze_obstacles) + cylinder_obstacles
+        toa_static_obstacles = list(maze_obstacles)
 
         for i, goal_xy in enumerate(self.corner_coords):
             toa_map = TOA.build_toa_map(
@@ -851,13 +851,13 @@ class TutorialEnv(DirectRLEnv):
 
         # 最小池化降采样 (kernel_size=4, stride=4) 从 (48, 64) 到 (12, 16)
         depth_frame = -torch.nn.functional.max_pool2d(-depth_frame, kernel_size=4, stride=4)
-        self._save_depth_debug_frames(
-            depth_nchw=depth_frame,
-            env_id=0,
-            channel=0,
-            normalized=True,
-            invert=False,
-        )
+        # self._save_depth_debug_frames(
+        #     depth_nchw=depth_frame,
+        #     env_id=0,
+        #     channel=0,
+        #     normalized=True,
+        #     invert=False,
+        # )
 
         # 归一化深度图
         max_vals = 10.0  # 相机最远探测距离m

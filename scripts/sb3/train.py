@@ -41,7 +41,7 @@ parser.add_argument(
     help="Name of the RL agent configuration entry point.",
 )
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
-parser.add_argument("--log_interval", type=int, default=500, help="Log data every n timesteps.")
+parser.add_argument("--log_interval", type=int, default=5000, help="Log data every n timesteps.")
 parser.add_argument(
     "--checkpoint_interval",
     type=int,
@@ -224,6 +224,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     agent_cfg = process_sb3_cfg(agent_cfg, env_cfg.scene.num_envs)
     # read configurations about the agent-training
     policy_arch = agent_cfg.pop("policy")
+    print(f"[INFO] Using policy architecture: {policy_arch}")
     n_timesteps = agent_cfg.pop("n_timesteps")
 
     # set the IO descriptors export flag if requested
@@ -281,19 +282,28 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # create agent from stable baselines
     # Modify policy_kwargs to include custom features extractor
     policy_kwargs = agent_cfg.get("policy_kwargs", {})
-    if "features_extractor_class" in policy_kwargs and policy_kwargs["features_extractor_class"] == "GodViewExtractor":
-        policy_kwargs["features_extractor_class"] = GodViewExtractor
-    else:
-        policy_kwargs["features_extractor_class"] = CustomCombinedExtractor
-        policy_kwargs["critic_features_extractor_class"] = CriticFeaturesExtractor
-        policy_kwargs["actor_features_extractor_class"] = ActorFeaturesExtractor
-        policy_kwargs["share_features_extractor"] = False
+    policy_kwargs["share_features_extractor"] = False
+    policy_kwargs.pop("features_extractor_class", None)
+    policy_kwargs.pop("features_extractor_kwargs", None)
+    policy_kwargs["actor_features_extractor_class"] = ActorFeaturesExtractor
+    policy_kwargs["critic_features_extractor_class"] = CriticFeaturesExtractor
+
     print(policy_kwargs)
     agent_cfg["policy_kwargs"] = policy_kwargs
     print(agent_cfg)
     agent = RecurrentPPO(policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg)
     if args_cli.checkpoint is not None:
         agent = agent.load(args_cli.checkpoint, env, print_system_info=True)
+
+    # ===== 验证非对称架构 =====
+    print("\n" + "=" * 60)
+    print("Teacher 非对称架构验证")
+    print(f"  Actor 特征提取器参数: {sum(p.numel() for p in agent.policy.pi_features_extractor.parameters()):,}")
+    print(f"  Critic 特征提取器参数: {sum(p.numel() for p in agent.policy.vf_features_extractor.parameters()):,}")
+    print(f"  共享特征提取器: {agent.policy.share_features_extractor}")
+    assert not agent.policy.share_features_extractor, "错误：特征提取器仍是共享的！"
+    print("  ✅ 非对称 AC 架构验证通过")
+    print("=" * 60 + "\n")
 
     # wandb logging
     if args_cli.wandb:
