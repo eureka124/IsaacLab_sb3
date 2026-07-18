@@ -149,7 +149,7 @@ class TutorialEnv(DirectRLEnv):
         self._init_toa_crop_grid()
 
         # Depth image saving
-        self.save_depth_debug = True
+        self.save_depth_debug = False
         self.depth_debug_max_frames = 2000
         self.depth_debug_frame_id = 0
         self.depth_debug_fps = 24
@@ -365,20 +365,20 @@ class TutorialEnv(DirectRLEnv):
             target_local = (self.target_pos[env_id, :2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy().astype(np.float32)
 
             env_obstacles = list(maze_obstacles)
-            for k, obs in enumerate(self.obstacles):
-                obs_pos_w = obs.data.root_pos_w[env_id]
-                # In some reset modes, disabled obstacles are moved below ground.
-                if obs_pos_w[2].item() < 0.0:
-                    continue
+            # for k, obs in enumerate(self.obstacles):
+            #     obs_pos_w = obs.data.root_pos_w[env_id]
+            #     # In some reset modes, disabled obstacles are moved below ground.
+            #     if obs_pos_w[2].item() < 0.0:
+            #         continue
 
-                center_local = (obs_pos_w[:2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy()
-                radius = float(self.obstacle_radii[k])
-                env_obstacles.append(
-                    TOA.circle_obstacle_to_rect(
-                        center_xy=(float(center_local[0]), float(center_local[1])),
-                        radius=radius,
-                    )
-                )
+            #     center_local = (obs_pos_w[:2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy()
+            #     radius = float(self.obstacle_radii[k])
+            #     env_obstacles.append(
+            #         TOA.circle_obstacle_to_rect(
+            #             center_xy=(float(center_local[0]), float(center_local[1])),
+            #             radius=radius,
+            #         )
+            #     )
 
             toa_map = TOA.build_toa_map(
                 goal_xy=target_local,
