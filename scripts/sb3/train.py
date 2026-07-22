@@ -202,7 +202,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # directory for logging into
     run_info = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     date = datetime.now().strftime("%Y-%m-%d")
-    log_root_path = os.path.abspath(os.path.join("logs", date, args_cli.name if args_cli.name else "default"))
+    log_root_path = os.path.abspath(os.path.join("logs", run_info, args_cli.name if args_cli.name else "default"))
 
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
     # The Ray Tune workflow extracts experiment name using the logging line below, hence, do not change it (see PR #2346, comment-2819298849)
