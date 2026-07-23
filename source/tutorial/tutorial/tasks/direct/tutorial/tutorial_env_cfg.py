@@ -75,28 +75,49 @@ class MySceneCfg(InteractiveSceneCfg):
 
 
 # 定义迷宫障碍物
-# 这里仅作为一个示例迷宫布局，你可以根据需要调整位置
-maze_obstacles = [
-    # ((x, y, z), (sx, sy, sz))
-    # 外围范围仍约为 x,y ∈ [-12.5, 12.5]
-    # 四个开口均为 8 m
+def create_maze_obstacles(
+    opening_size=8.0,  # 实际净开口宽度
+    wall_offset=12.0,  # 墙体中心线距离原点
+    wall_thickness=1.0,
+    wall_height=4.0,
+):
+    """
+    创建四面带开口的方形围墙。
+    """
+    a = opening_size
+    b = wall_thickness
+    c = wall_offset
 
-    # 左下角
-    ((-8.25, -12.0, 2.0), (8.5, 1.0, 4.0)),   # 下侧左水平墙
-    ((-12.0, -8.25, 2.0), (1.0, 8.5, 4.0)),   # 左侧下竖直墙
+    wall_length = c - a / 2.0 - b / 2.0
 
-    # 右下角
-    ((8.25, -12.0, 2.0), (8.5, 1.0, 4.0)),    # 下侧右水平墙
-    ((12.0, -8.25, 2.0), (1.0, 8.5, 4.0)),    # 右侧下竖直墙
+    half_wall_height = wall_height / 2.0
+    wall_length_position = c / 2.0 + a / 4.0 - b / 4.0
 
-    # 左上角
-    ((-8.25, 12.0, 2.0), (8.5, 1.0, 4.0)),    # 上侧左水平墙
-    ((-12.0, 8.25, 2.0), (1.0, 8.5, 4.0)),    # 左侧上竖直墙
+    maze_obstacles = [
+        # 第一象限
+        ((wall_length_position, wall_offset, half_wall_height), (wall_length, wall_thickness, wall_height)),
+        ((wall_offset, wall_length_position, half_wall_height), (wall_thickness, wall_length, wall_height)),
+        # 第二象限
+        ((-wall_length_position, wall_offset, half_wall_height), (wall_length, wall_thickness, wall_height)),
+        ((-wall_offset, wall_length_position, half_wall_height), (wall_thickness, wall_length, wall_height)),
+        # 第三象限
+        ((-wall_length_position, -wall_offset, half_wall_height), (wall_length, wall_thickness, wall_height)),
+        ((-wall_offset, -wall_length_position, half_wall_height), (wall_thickness, wall_length, wall_height)),
+        # 第四象限
+        ((wall_length_position, -wall_offset, half_wall_height), (wall_length, wall_thickness, wall_height)),
+        ((wall_offset, -wall_length_position, half_wall_height), (wall_thickness, wall_length, wall_height)),
+    ]
+    print("=============================================================")
+    print(maze_obstacles)
+    return maze_obstacles
 
-    # 右上角
-    ((8.25, 12.0, 2.0), (8.5, 1.0, 4.0)),     # 上侧右水平墙
-    ((12.0, 8.25, 2.0), (1.0, 8.5, 4.0)),     # 右侧上竖直墙
-]
+
+maze_obstacles = create_maze_obstacles(
+    opening_size=8.0,
+    wall_offset=12.0,
+    wall_thickness=1.0,
+    wall_height=4.0,
+)
 
 for i, (pos, size) in enumerate(maze_obstacles):
     obstacle_cfg = RigidObjectCfg(
