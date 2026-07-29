@@ -157,7 +157,7 @@ class TutorialEnv(DirectRLEnv):
 
         self.depth_debug_dir = Path(os.getcwd()) / "outputs" / "depth_frames"
         self.depth_debug_dir.mkdir(parents=True, exist_ok=True)
-        
+
     def _init_toa_crop_grid(self):
         crop_size = int(self.critic_toa_crop_size)
         dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
@@ -273,18 +273,11 @@ class TutorialEnv(DirectRLEnv):
 
         # 使用提前缓存好的局部采样网格，避免每步重复 linspace / meshgrid / stack
         if crop_size != self.toa_crop_size_cached:
-            raise ValueError(
-                f"Cached TOA crop grid has size {self.toa_crop_size_cached}, "
-                f"but requested crop_size={crop_size}. "
-                "Please rebuild the crop grid or use self.critic_toa_crop_size."
-            )
+            raise ValueError(f"Cached TOA crop grid has size {self.toa_crop_size_cached}, " f"but requested crop_size={crop_size}. " "Please rebuild the crop grid or use self.critic_toa_crop_size.")
 
         grid_local = self.toa_crop_grid_local
 
-        robot_pos_local = (
-            self.robot.data.root_pos_w[env_ids, :2]
-            - self.scene.env_origins[env_ids, :2]
-        ).to(device=device, dtype=dtype)
+        robot_pos_local = (self.robot.data.root_pos_w[env_ids, :2] - self.scene.env_origins[env_ids, :2]).to(device=device, dtype=dtype)
 
         q = self.robot.data.root_quat_w[env_ids].to(device=device, dtype=dtype)
         w, x, y, z = torch.unbind(q, dim=-1)
@@ -872,7 +865,6 @@ class TutorialEnv(DirectRLEnv):
         depth_frame = depth_frame * 2.0 - 1.0  # 映射到 [-1, 1]
         # print(depth_norm.shape) # (env_num, 1, 12, 16)
         # 保存第 0 个环境的前 200 帧深度图
-
 
         return depth_frame  # shape:[env_num, 1, 12, 16]
 
