@@ -107,7 +107,7 @@ def create_maze_obstacles(
         ((wall_length_position, -wall_offset, half_wall_height), (wall_length, wall_thickness, wall_height)),
         ((wall_offset, -wall_length_position, half_wall_height), (wall_thickness, wall_length, wall_height)),
     ]
-    print("=============================================================")
+    print("=============================maze obstacles information================================")
     print(maze_obstacles)
     return maze_obstacles
 
