@@ -11,7 +11,7 @@ import omni.timeline
 from isaaclab.envs import DirectRLEnv
 from isaaclab.assets import RigidObject
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
-from .tutorial_env_cfg import TutorialEnvCfg, maze_obstacles
+from .tutorial_env_cfg import OBSTACLE_GRID_SIZE, TutorialEnvCfg, maze_obstacles, obstacle_positions
 from . import TOA
 from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG
 from isaaclab.markers import VisualizationMarkers
@@ -85,7 +85,7 @@ class TutorialEnv(DirectRLEnv):
 
         # Grid management
         self.env_spacing = self.cfg.scene.env_spacing
-        self.grid_size = 10
+        self.grid_size = OBSTACLE_GRID_SIZE
         self.cell_size = 20.0 / self.grid_size
 
         # ToA map management
@@ -131,15 +131,22 @@ class TutorialEnv(DirectRLEnv):
         # Collect obstacles from scene
         self.obstacles = []
         self.obstacle_radii = []
-        # We assume Obstacle_0 to Obstacle_59 exist in scene as per config
-        for i in range(60):
+        self.num_obstacles = len(obstacle_positions)
+        missing_obstacles = []
+        for i in range(self.num_obstacles):
             name = f"Obstacle_{i}"
-            # Check if it exists in the scene dictionary
-            if name in self.scene.keys():
-                obs = self.scene[name]
-                self.obstacles.append(obs)
-                # Get radius from config spawn.
-                self.obstacle_radii.append(obs.cfg.spawn.radius)
+            if name not in self.scene.keys():
+                missing_obstacles.append(name)
+                continue
+            obs = self.scene[name]
+            self.obstacles.append(obs)
+            self.obstacle_radii.append(float(obs.cfg.spawn.radius))
+
+        if missing_obstacles:
+            raise RuntimeError(
+                "Scene obstacle configuration is out of sync with obstacle_positions; "
+                f"missing: {', '.join(missing_obstacles)}"
+            )
 
         if self.obstacles:
             self.obstacle_radii_tensor = torch.tensor(self.obstacle_radii, device=self.device)
@@ -203,8 +210,6 @@ class TutorialEnv(DirectRLEnv):
             device=self.device,
         )
 
-        from .tutorial_env_cfg import maze_obstacles, obstacle_positions
-
         cylinder_obstacles = [
             TOA.circle_obstacle_to_rect(
                 center_xy=(float(pos[0]), float(pos[1])),
@@ -213,6 +218,7 @@ class TutorialEnv(DirectRLEnv):
             for pos, radius, _height in obstacle_positions
         ]
         toa_static_obstacles = list(maze_obstacles)
+        toa_static_obstacles.extend(cylinder_obstacles)
 
         for i, goal_xy in enumerate(self.corner_coords):
             toa_map = TOA.build_toa_map(
@@ -360,16 +366,15 @@ class TutorialEnv(DirectRLEnv):
             env_obstacles = list(maze_obstacles)
             # for k, obs in enumerate(self.obstacles):
             #     obs_pos_w = obs.data.root_pos_w[env_id]
-            #     # In some reset modes, disabled obstacles are moved below ground.
+            #     # Some reset modes disable an obstacle by moving it below the floor.
             #     if obs_pos_w[2].item() < 0.0:
             #         continue
 
             #     center_local = (obs_pos_w[:2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy()
-            #     radius = float(self.obstacle_radii[k])
             #     env_obstacles.append(
             #         TOA.circle_obstacle_to_rect(
             #             center_xy=(float(center_local[0]), float(center_local[1])),
-            #             radius=radius,
+            #             radius=self.obstacle_radii[k],
             #         )
             #     )
 
@@ -1138,12 +1143,18 @@ class TutorialEnv(DirectRLEnv):
         default_root_state[:, :3] += self.scene.env_origins[env_ids]
 
         # Grid Logic
-        rand_vals = torch.rand((len_env_ids, 100), device=self.device)
-        perm = torch.argsort(rand_vals, dim=1)  # (len_env_ids, 100)
+        num_grid_cells = self.grid_size**2
+        if self.num_obstacles + 2 > num_grid_cells:
+            raise RuntimeError(
+                f"{self.num_obstacles} obstacles do not fit in a {self.grid_size}x{self.grid_size} grid "
+                "while reserving start and goal cells."
+            )
+        rand_vals = torch.rand((len_env_ids, num_grid_cells), device=self.device)
+        perm = torch.argsort(rand_vals, dim=1)
 
-        obs_grid_indices = perm[:, :60]  # (len_env_ids, 60)
-        start_grid_indices = perm[:, 60]  # (len_env_ids,)
-        goal_grid_indices = perm[:, 61]  # (len_env_ids,)
+        obs_grid_indices = perm[:, : self.num_obstacles]
+        start_grid_indices = perm[:, self.num_obstacles]
+        goal_grid_indices = perm[:, self.num_obstacles + 1]
 
         def get_grid_coords_batch(indices):
             row = indices // self.grid_size
@@ -1156,9 +1167,6 @@ class TutorialEnv(DirectRLEnv):
         # Place Obstacles
         if len(self.obstacles) > 0:
             for k in range(len(self.obstacles)):
-                if k >= 60:
-                    break
-
                 grid_idx = obs_grid_indices[:, k]
                 cx, cy = get_grid_coords_batch(grid_idx)
                 r = self.obstacle_radii_tensor[k]
@@ -1297,9 +1305,14 @@ class TutorialEnv(DirectRLEnv):
         default_root_state[:, :3] += self.scene.env_origins[env_ids]
 
         # 1. 障碍物重置方式与 _randomize_grid_positions 一致
-        rand_vals = torch.rand((len_env_ids, 100), device=self.device)
-        perm = torch.argsort(rand_vals, dim=1)  # (len_env_ids, 100)
-        obs_grid_indices = perm[:, :60]  # (len_env_ids, 60)
+        num_grid_cells = self.grid_size**2
+        if self.num_obstacles > num_grid_cells:
+            raise RuntimeError(
+                f"{self.num_obstacles} obstacles do not fit in a {self.grid_size}x{self.grid_size} grid."
+            )
+        rand_vals = torch.rand((len_env_ids, num_grid_cells), device=self.device)
+        perm = torch.argsort(rand_vals, dim=1)
+        obs_grid_indices = perm[:, : self.num_obstacles]
 
         def get_grid_coords_batch(indices):
             row = indices // self.grid_size
@@ -1310,9 +1323,6 @@ class TutorialEnv(DirectRLEnv):
 
         if len(self.obstacles) > 0:
             for k in range(len(self.obstacles)):
-                if k >= 60:
-                    break
-
                 grid_idx = obs_grid_indices[:, k]
                 cx, cy = get_grid_coords_batch(grid_idx)
                 r = self.obstacle_radii_tensor[k]
