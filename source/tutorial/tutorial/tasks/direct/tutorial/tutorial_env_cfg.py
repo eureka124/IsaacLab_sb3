@@ -142,7 +142,7 @@ for i, (pos, size) in enumerate(maze_obstacles):
 
 # 随机生成静止圆柱障碍物；数量范围为 0 到 (OBSTACLE_GRID_SIZE ** 2 - 2)。
 OBSTACLE_GRID_SIZE = 10
-NUM_OBSTACLES = 60
+NUM_OBSTACLES = 80
 OBSTACLE_RANDOM_SEED = 42  # 设为 None 可在每次启动时生成不同布局
 
 
