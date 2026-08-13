@@ -13,7 +13,7 @@ from isaaclab.assets import RigidObject
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from .tutorial_env_cfg import OBSTACLE_GRID_SIZE, TutorialEnvCfg, maze_obstacles, obstacle_positions
 from . import TOA
-from isaaclab.markers import CUBOID_MARKER_CFG, RED_ARROW_X_MARKER_CFG
+from isaaclab.markers import CUBOID_MARKER_CFG
 from isaaclab.markers import VisualizationMarkers
 from omni_drones.controllers import LeePositionController
 from isaaclab.utils.math import quat_from_matrix
@@ -48,9 +48,10 @@ class TutorialEnv(DirectRLEnv):
         marker_cfg.prim_path = "/Visuals/Command/goal_position"
         self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
 
-        # 速度方向箭头可视化
-        arrow_cfg = RED_ARROW_X_MARKER_CFG.copy()
-        arrow_cfg.markers["arrow"].scale = (2.5, 2.5, 2.5)  # 默认缩放
+        # 速度方向可视化。使用本地 primitive，避免依赖远程 arrow_x.usd。
+        arrow_cfg = CUBOID_MARKER_CFG.copy()
+        arrow_cfg.markers["arrow"] = arrow_cfg.markers.pop("cuboid")
+        arrow_cfg.markers["arrow"].size = (1.0, 1.0, 1.0)
         arrow_cfg.prim_path = "/Visuals/Command/velocity_arrow"
         self.vel_arrow_visualizer = VisualizationMarkers(arrow_cfg)
 

@@ -2,6 +2,7 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
+import os
 from typing import Optional
 
 import isaaclab.sim as sim_utils
@@ -11,7 +12,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 from tutorial.assets.hummingbird import HUMMINGBIRD_CFG
-from isaaclab.assets import ArticulationCfg, RigidObjectCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.sensors import ContactSensorCfg
 import numpy as np
 from gymnasium import spaces
@@ -138,6 +139,27 @@ for i, (pos, size) in enumerate(maze_obstacles):
         init_state=RigidObjectCfg.InitialStateCfg(pos=pos),
     )
     setattr(MySceneCfg, f"maze_Obstacle_{i}", obstacle_cfg)
+
+
+# 从 USD 文件加载 U 形障碍物。XY 坐标在每次启动时随机生成，Z 坐标固定。
+NUM_U_OBSTACLES = 20
+U_OBSTACLE_XY_RANGE = (-10.0, 10.0)
+U_OBSTACLE_ORIGIN_EXCLUSION_HALF_SIZE = 2.0
+U_OBSTACLE_Z = 0.0
+U_OBSTACLE_USD_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../assets/usd/u_obstacle.usd"))
+
+u_obstacle_rng = np.random.default_rng()
+for i in range(NUM_U_OBSTACLES):
+    while True:
+        x, y = u_obstacle_rng.uniform(*U_OBSTACLE_XY_RANGE, size=2)
+        if not (abs(x) <= U_OBSTACLE_ORIGIN_EXCLUSION_HALF_SIZE and abs(y) <= U_OBSTACLE_ORIGIN_EXCLUSION_HALF_SIZE):
+            break
+    u_obstacle_cfg = AssetBaseCfg(
+        prim_path=f"{{ENV_REGEX_NS}}/U_Obstacle_{i}",
+        spawn=sim_utils.UsdFileCfg(usd_path=U_OBSTACLE_USD_PATH),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(float(x), float(y), U_OBSTACLE_Z)),
+    )
+    setattr(MySceneCfg, f"U_Obstacle_{i}", u_obstacle_cfg)
 
 
 # 随机生成静止圆柱障碍物；数量范围为 0 到 (OBSTACLE_GRID_SIZE ** 2 - 2)。
