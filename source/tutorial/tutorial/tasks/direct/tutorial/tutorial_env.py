@@ -77,7 +77,9 @@ class TutorialEnv(DirectRLEnv):
             },
         }
         self.controller = LeePositionController(g=9.81, uav_params=uav_params).to(self.device)
-        self.mixer_pinv = torch.linalg.pinv(self.controller.mixer)
+        self.base_link_ids, base_link_names = self.robot.find_bodies("base_link")
+        if len(self.base_link_ids) != 1:
+            raise RuntimeError(f"Expected one base_link body, got: {base_link_names}")
         self.target_pos_setpoint = torch.zeros((self.num_envs, 3), device=self.device)
         self.target_yaw_setpoint = torch.zeros((self.num_envs, 1), device=self.device)
         # [超时次数, 碰撞次数, 到达次数]
@@ -263,7 +265,9 @@ class TutorialEnv(DirectRLEnv):
             self.device,
         )
 
-    def _build_robot_aligned_toa_map(self, env_ids: torch.Tensor | None = None, crop_size: int | None = None) -> torch.Tensor:
+    def _build_robot_aligned_toa_map(
+        self, env_ids: torch.Tensor | None = None, crop_size: int | None = None
+    ) -> torch.Tensor:
         """Build TOA maps aligned with each robot's body frame.
 
         The returned map is centered on the robot and rotated by its yaw so the
@@ -280,11 +284,17 @@ class TutorialEnv(DirectRLEnv):
 
         # 使用提前缓存好的局部采样网格，避免每步重复 linspace / meshgrid / stack
         if crop_size != self.toa_crop_size_cached:
-            raise ValueError(f"Cached TOA crop grid has size {self.toa_crop_size_cached}, " f"but requested crop_size={crop_size}. " "Please rebuild the crop grid or use self.critic_toa_crop_size.")
+            raise ValueError(
+                f"Cached TOA crop grid has size {self.toa_crop_size_cached}, "
+                f"but requested crop_size={crop_size}. "
+                "Please rebuild the crop grid or use self.critic_toa_crop_size."
+            )
 
         grid_local = self.toa_crop_grid_local
 
-        robot_pos_local = (self.robot.data.root_pos_w[env_ids, :2] - self.scene.env_origins[env_ids, :2]).to(device=device, dtype=dtype)
+        robot_pos_local = (self.robot.data.root_pos_w[env_ids, :2] - self.scene.env_origins[env_ids, :2]).to(
+            device=device, dtype=dtype
+        )
 
         q = self.robot.data.root_quat_w[env_ids].to(device=device, dtype=dtype)
         w, x, y, z = torch.unbind(q, dim=-1)
@@ -319,10 +329,14 @@ class TutorialEnv(DirectRLEnv):
         sampled = sampled * 2.0 - 1.0
         return sampled
 
-    def _save_robot_aligned_toa_map(self, env_id: int = 0, save_path: str | None = None, crop_size: int | None = None) -> str:
+    def _save_robot_aligned_toa_map(
+        self, env_id: int = 0, save_path: str | None = None, crop_size: int | None = None
+    ) -> str:
         """Save the robot-aligned TOA map for one environment as an image."""
         if save_path is None:
-            save_path = os.path.join(self.toa_output_dir, f"toa_aligned_env_{env_id:03d}_step_{self.step_count:06d}.png")
+            save_path = os.path.join(
+                self.toa_output_dir, f"toa_aligned_env_{env_id:03d}_step_{self.step_count:06d}.png"
+            )
 
         toa_map = self._build_robot_aligned_toa_map(
             env_ids=torch.tensor([env_id], device=self.device),
@@ -362,7 +376,13 @@ class TutorialEnv(DirectRLEnv):
 
         # Obstacles are randomized at reset, so rebuild TOA maps from current obstacle states.
         for env_id in env_ids.tolist():
-            target_local = (self.target_pos[env_id, :2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy().astype(np.float32)
+            target_local = (
+                (self.target_pos[env_id, :2] - self.scene.env_origins[env_id, :2])
+                .detach()
+                .cpu()
+                .numpy()
+                .astype(np.float32)
+            )
 
             env_obstacles = list(maze_obstacles)
             # for k, obs in enumerate(self.obstacles):
@@ -462,7 +482,9 @@ class TutorialEnv(DirectRLEnv):
         dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
         half_extent = (crop_size / 2.0) * dx
 
-        robot_pos_local = (self.robot.data.root_pos_w[env_id, :2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy()
+        robot_pos_local = (
+            (self.robot.data.root_pos_w[env_id, :2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy()
+        )
 
         quat = self.robot.data.root_quat_w[env_id].detach().cpu()
         w, x, y, z = quat.tolist()
@@ -526,7 +548,14 @@ class TutorialEnv(DirectRLEnv):
         dy = float(np.sin(yaw) * arrow_len)
         from matplotlib.patches import FancyArrowPatch
 
-        arrow = FancyArrowPatch((robot_xy[0], robot_xy[1]), (robot_xy[0] + dx, robot_xy[1] + dy), arrowstyle="->", color="blue", mutation_scale=18, linewidth=2)
+        arrow = FancyArrowPatch(
+            (robot_xy[0], robot_xy[1]),
+            (robot_xy[0] + dx, robot_xy[1] + dy),
+            arrowstyle="->",
+            color="blue",
+            mutation_scale=18,
+            linewidth=2,
+        )
         plt.gca().add_patch(arrow)
 
         # 叠加旋转后的 TOA 裁剪窗口，展示当前 critic 使用的局部范围
@@ -682,7 +711,14 @@ class TutorialEnv(DirectRLEnv):
         dy = float(np.sin(yaw) * arrow_len)
         from matplotlib.patches import FancyArrowPatch
 
-        arrow = FancyArrowPatch((robot_xy[0], robot_xy[1]), (robot_xy[0] + dx, robot_xy[1] + dy), arrowstyle="->", color="blue", mutation_scale=18, linewidth=2)
+        arrow = FancyArrowPatch(
+            (robot_xy[0], robot_xy[1]),
+            (robot_xy[0] + dx, robot_xy[1] + dy),
+            arrowstyle="->",
+            color="blue",
+            mutation_scale=18,
+            linewidth=2,
+        )
         plt.gca().add_patch(arrow)
 
         # 4. 绘制迷宫墙壁与圆柱障碍轮廓
@@ -890,7 +926,9 @@ class TutorialEnv(DirectRLEnv):
         robot_quat = self.robot.data.root_quat_w
         diff_global = self.target_pos - robot_pos
         diff_body = quat_rotate_inverse(robot_quat, diff_global)
-        relative_position = diff_body[:, :2].clamp(-5.0, 5.0)  # 目标位置相对于机器人的位置差 (num_envs, 2)，并裁剪到合理范围
+        relative_position = diff_body[:, :2].clamp(
+            -5.0, 5.0
+        )  # 目标位置相对于机器人的位置差 (num_envs, 2)，并裁剪到合理范围
 
         last_action = self.actions
 
@@ -970,7 +1008,9 @@ class TutorialEnv(DirectRLEnv):
         target_pos = self.target_pos[:, :2]  # 目标位置 (num_envs, 2)
         robot_pos = self.robot.data.root_pos_w[:, :2]  # 机器人位置 (num_envs, 2)
         direction_vector = target_pos - robot_pos  # 目标点相对机器人的位置 (num_envs, 2)
-        direction_vector = direction_vector / (torch.norm(direction_vector, dim=-1, keepdim=True) + 1e-6)  # 归一化方向向量 (num_envs, 2)
+        direction_vector = direction_vector / (
+            torch.norm(direction_vector, dim=-1, keepdim=True) + 1e-6
+        )  # 归一化方向向量 (num_envs, 2)
         linear_velocity = self.robot.data.root_lin_vel_w[:, :2]  # 线速度 (num_envs, 2) [vx, vy]
         reward_velocity = torch.sum(linear_velocity * direction_vector, dim=1)  # 速度奖励 (num_envs,)
 
@@ -983,7 +1023,9 @@ class TutorialEnv(DirectRLEnv):
 
         # 计算障碍物距离惩罚
         if len(self.obstacles) > 0:
-            obstacle_pos = torch.stack([obs.data.root_pos_w[:, :2] for obs in self.obstacles], dim=0)  # (num_obstacles, num_envs, 2)
+            obstacle_pos = torch.stack(
+                [obs.data.root_pos_w[:, :2] for obs in self.obstacles], dim=0
+            )  # (num_obstacles, num_envs, 2)
             # 计算机器人到障碍物中心的距离
             # robot_pos: (num_envs, 2) -> unsqueeze(0) -> (1, num_envs, 2)
             dists = torch.norm(obstacle_pos - robot_pos.unsqueeze(0), dim=-1)  # (num_obstacles, num_envs)
@@ -1100,7 +1142,10 @@ class TutorialEnv(DirectRLEnv):
         if current_sum > 0 and current_sum % 1000 == 0:
             if not self.last_condition_state:  # 防止同一步重复打印
                 success_rates = self.success_rate_count / self.success_rate_count.sum().item() * 100
-                print(f"Stats [Timeout, Collision, Arrived]: [{success_rates[0]:.2f}%, {success_rates[1]:.2f}%, {success_rates[2]:.2f}%, total episodes: {self.success_rate_count.sum().item()}]")
+                print(
+                    f"Stats [Timeout, Collision, Arrived]: [{success_rates[0]:.2f}%, {success_rates[1]:.2f}%,"
+                    f" {success_rates[2]:.2f}%, total episodes: {self.success_rate_count.sum().item()}]"
+                )
                 self.last_condition_state = True
                 self.success_rate_count[:] = 0
         else:
@@ -1231,7 +1276,9 @@ class TutorialEnv(DirectRLEnv):
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         # 从归一化后的四元数提取 yaw
         w, x, y, z = torch.unbind(target_quat, dim=-1)
-        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(-1)
+        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(
+            -1
+        )
 
     def _fixed_reset_positions(self, env_ids):
         """保持障碍物在原始位置，无人机位于原点，目标点在边界随机采样。"""
@@ -1296,7 +1343,9 @@ class TutorialEnv(DirectRLEnv):
         # 5. 初始化控制器状态
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         w, x, y, z = torch.unbind(target_quat, dim=-1)
-        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(-1)
+        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(
+            -1
+        )
 
     def _corner_diagonal_reset_positions(self, env_ids):
         """障碍物随机网格重置；无人机起点为四角之一，目标为对角角点。"""
@@ -1388,7 +1437,9 @@ class TutorialEnv(DirectRLEnv):
 
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         w, x, y, z = torch.unbind(target_quat, dim=-1)
-        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(-1)
+        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(
+            -1
+        )
 
     def _save_depth_debug_frames(
         self,

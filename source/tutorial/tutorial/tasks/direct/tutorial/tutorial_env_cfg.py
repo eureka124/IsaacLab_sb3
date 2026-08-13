@@ -209,9 +209,7 @@ def generate_obstacle_positions(
             generated.append(((x, y, height / 2.0), radius, height))
             break
         else:
-            raise RuntimeError(
-                f"Unable to place obstacle {obstacle_index}; reduce NUM_OBSTACLES or min_clearance."
-            )
+            raise RuntimeError(f"Unable to place obstacle {obstacle_index}; reduce NUM_OBSTACLES or min_clearance.")
 
     return generated
 
