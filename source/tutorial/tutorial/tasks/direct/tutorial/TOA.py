@@ -59,6 +59,9 @@ def build_toa_map(
     goal_radius = max(grid_dx * 1.5, 1e-3)
     # Keep a finite initial front for skfmm stability, then rebase TOA so goal is 0.
     phi = np.sqrt((grid_x - goal_xy[0]) ** 2 + (grid_y - goal_xy[1]) ** 2) - goal_radius
+    # scikit-fmm derives blocked cells from the level-set mask. Masking only the
+    # speed array is not sufficient and can let paths pass through obstacles.
+    phi = np.ma.array(phi, mask=obstacle_mask)
     toa_map = skfmm.travel_time(phi, speed, dx=grid_dx)
 
     if np.ma.isMaskedArray(toa_map):

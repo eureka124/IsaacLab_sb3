@@ -141,25 +141,68 @@ for i, (pos, size) in enumerate(maze_obstacles):
     setattr(MySceneCfg, f"maze_Obstacle_{i}", obstacle_cfg)
 
 
-# 从 USD 文件加载 U 形障碍物。XY 坐标在每次启动时随机生成，Z 坐标固定。
+# 从 USD 文件加载 U 形障碍物。XY 和朝向在每次启动时随机生成，Z 坐标固定。
 NUM_U_OBSTACLES = 20
 U_OBSTACLE_XY_RANGE = (-10.0, 10.0)
 U_OBSTACLE_ORIGIN_EXCLUSION_HALF_SIZE = 2.0
 U_OBSTACLE_Z = 0.0
+U_OBSTACLE_YAWS = (np.pi / 2.0, np.pi, 3.0 * np.pi / 2.0)
 U_OBSTACLE_USD_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../assets/usd/u_obstacle.usd"))
+# 与 USD 模型的俯视轮廓一致：左右侧墙和后墙，开口朝局部 -Y。
+U_OBSTACLE_FOOTPRINT_RECTS = (
+    ((-0.95, 0.0), (0.1, 0.8)),
+    ((0.95, 0.0), (0.1, 0.8)),
+    ((0.0, 0.45), (2.0, 0.1)),
+)
 
 u_obstacle_rng = np.random.default_rng()
+u_obstacle_positions = []
+u_obstacle_yaws = []
 for i in range(NUM_U_OBSTACLES):
     while True:
         x, y = u_obstacle_rng.uniform(*U_OBSTACLE_XY_RANGE, size=2)
         if not (abs(x) <= U_OBSTACLE_ORIGIN_EXCLUSION_HALF_SIZE and abs(y) <= U_OBSTACLE_ORIGIN_EXCLUSION_HALF_SIZE):
             break
+    position = (float(x), float(y), U_OBSTACLE_Z)
+    yaw = float(u_obstacle_rng.choice(U_OBSTACLE_YAWS))
+    orientation = (float(np.cos(yaw / 2.0)), 0.0, 0.0, float(np.sin(yaw / 2.0)))
+    u_obstacle_positions.append(position)
+    u_obstacle_yaws.append(yaw)
     u_obstacle_cfg = AssetBaseCfg(
         prim_path=f"{{ENV_REGEX_NS}}/U_Obstacle_{i}",
         spawn=sim_utils.UsdFileCfg(usd_path=U_OBSTACLE_USD_PATH),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(float(x), float(y), U_OBSTACLE_Z)),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=position, rot=orientation),
     )
     setattr(MySceneCfg, f"U_Obstacle_{i}", u_obstacle_cfg)
+
+
+def create_u_obstacle_toa_rects(position, yaw):
+    """Create the three axis-aligned TOA rectangles for a quarter-turn U obstacle."""
+    cos_yaw = int(round(np.cos(yaw)))
+    sin_yaw = int(round(np.sin(yaw)))
+    swap_size_axes = abs(sin_yaw) == 1
+    rectangles = []
+
+    for offset_xy, size_xy in U_OBSTACLE_FOOTPRINT_RECTS:
+        rotated_offset_x = cos_yaw * offset_xy[0] - sin_yaw * offset_xy[1]
+        rotated_offset_y = sin_yaw * offset_xy[0] + cos_yaw * offset_xy[1]
+        rotated_size_xy = (size_xy[1], size_xy[0]) if swap_size_axes else size_xy
+        rectangles.append(
+            (
+                (position[0] + rotated_offset_x, position[1] + rotated_offset_y, U_OBSTACLE_Z),
+                (rotated_size_xy[0], rotated_size_xy[1], 4.0),
+            )
+        )
+
+    return rectangles
+
+
+# TOA 使用轴对齐矩形，将每个 U 形模型拆成三个与其墙体对应的矩形。
+u_obstacle_toa_obstacles = [
+    rectangle
+    for position, yaw in zip(u_obstacle_positions, u_obstacle_yaws)
+    for rectangle in create_u_obstacle_toa_rects(position, yaw)
+]
 
 
 # 随机生成静止圆柱障碍物；数量范围为 0 到 (OBSTACLE_GRID_SIZE ** 2 - 2)。

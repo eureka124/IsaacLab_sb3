@@ -8,10 +8,22 @@ import torch.nn.functional as F
 import os
 import isaaclab.sim as sim_utils
 import omni.timeline
+from isaacsim.core.prims import XFormPrim
 from isaaclab.envs import DirectRLEnv
 from isaaclab.assets import RigidObject
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
-from .tutorial_env_cfg import OBSTACLE_GRID_SIZE, TutorialEnvCfg, maze_obstacles, obstacle_positions
+from .tutorial_env_cfg import (
+    NUM_U_OBSTACLES,
+    OBSTACLE_GRID_SIZE,
+    TutorialEnvCfg,
+    U_OBSTACLE_YAWS,
+    create_u_obstacle_toa_rects,
+    maze_obstacles,
+    obstacle_positions,
+    u_obstacle_positions,
+    u_obstacle_toa_obstacles,
+    u_obstacle_yaws,
+)
 from . import TOA
 from isaaclab.markers import CUBOID_MARKER_CFG
 from isaaclab.markers import VisualizationMarkers
@@ -156,6 +168,26 @@ class TutorialEnv(DirectRLEnv):
         else:
             self.obstacle_radii_tensor = torch.zeros((0,), device=self.device)
 
+        # Scene extras create their XFormPrim view before environment cloning, so
+        # rebuild each view here to include every cloned environment instance.
+        self.u_obstacles = [
+            XFormPrim(
+                f"{self.scene.env_regex_ns}/U_Obstacle_{i}",
+                reset_xform_properties=False,
+            )
+            for i in range(NUM_U_OBSTACLES)
+        ]
+        invalid_u_obstacle_views = [
+            index for index, obstacle in enumerate(self.u_obstacles) if obstacle.count != self.num_envs
+        ]
+        if invalid_u_obstacle_views:
+            raise RuntimeError(
+                "U obstacle views do not cover every environment: "
+                f"{invalid_u_obstacle_views}; expected {self.num_envs} prims per view."
+            )
+        initial_u_yaws = torch.tensor(u_obstacle_yaws, dtype=torch.float32, device=self.device)
+        self.u_obstacle_yaws = initial_u_yaws.unsqueeze(0).repeat(self.num_envs, 1)
+
         self._init_toa_crop_grid()
 
         # Depth image saving
@@ -222,6 +254,7 @@ class TutorialEnv(DirectRLEnv):
         ]
         toa_static_obstacles = list(maze_obstacles)
         toa_static_obstacles.extend(cylinder_obstacles)
+        toa_static_obstacles.extend(u_obstacle_toa_obstacles)
 
         for i, goal_xy in enumerate(self.corner_coords):
             toa_map = TOA.build_toa_map(
@@ -385,6 +418,9 @@ class TutorialEnv(DirectRLEnv):
             )
 
             env_obstacles = list(maze_obstacles)
+            env_u_yaws = self.u_obstacle_yaws[env_id].detach().cpu().tolist()
+            for position, yaw in zip(u_obstacle_positions, env_u_yaws):
+                env_obstacles.extend(create_u_obstacle_toa_rects(position, yaw))
             # for k, obs in enumerate(self.obstacles):
             #     obs_pos_w = obs.data.root_pos_w[env_id]
             #     # Some reset modes disable an obstacle by moving it below the floor.
@@ -415,6 +451,39 @@ class TutorialEnv(DirectRLEnv):
             self.robot.data.root_pos_w[env_ids, :2],
             self.scene.env_origins[env_ids, :2],
         )
+
+    def _randomize_u_obstacle_rotations(self, env_ids: torch.Tensor) -> None:
+        """Randomize every U obstacle orientation for the selected environments."""
+        env_ids = env_ids.to(device=self.device, dtype=torch.long)
+        num_reset_envs = env_ids.numel()
+        if num_reset_envs == 0 or not self.u_obstacles:
+            return
+
+        yaw_options = torch.tensor(U_OBSTACLE_YAWS, dtype=torch.float32, device=self.device)
+        yaw_indices = torch.randint(
+            0,
+            len(U_OBSTACLE_YAWS),
+            (num_reset_envs, len(self.u_obstacles)),
+            device=self.device,
+        )
+        sampled_yaws = yaw_options[yaw_indices]
+        self.u_obstacle_yaws[env_ids] = sampled_yaws
+
+        for obstacle_index, obstacle in enumerate(self.u_obstacles):
+            yaw = sampled_yaws[:, obstacle_index]
+            orientations = torch.zeros((num_reset_envs, 4), dtype=torch.float32, device=self.device)
+            orientations[:, 0] = torch.cos(yaw / 2.0)
+            orientations[:, 3] = torch.sin(yaw / 2.0)
+            translations = torch.tensor(
+                u_obstacle_positions[obstacle_index],
+                dtype=torch.float32,
+                device=self.device,
+            ).expand(num_reset_envs, -1)
+            obstacle.set_local_poses(
+                translations=translations,
+                orientations=orientations,
+                indices=env_ids,
+            )
 
     def _setup_scene(self):
         self.robot = self.scene["robot_cfg"]
@@ -1171,6 +1240,7 @@ class TutorialEnv(DirectRLEnv):
         # self._fixed_reset_positions(env_ids)
         self._corner_diagonal_reset_positions(env_ids)
 
+        self._randomize_u_obstacle_rotations(env_ids)
         self._update_toa_cache(env_ids)
 
         # create markers if necessary for the first time
