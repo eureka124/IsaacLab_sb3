@@ -1456,17 +1456,9 @@ class TutorialEnv(DirectRLEnv):
                 obs_x = cx + offset_x
                 obs_y = cy + offset_y
 
-                # 确保中心点 3m 内没有障碍物 (x^2 + y^2 < 3^2)
-                dist_sq = obs_x**2 + obs_y**2
-                safe_mask = dist_sq < 3.0**2
-
                 obs_defaults = self.obstacles[k].data.default_root_state[env_ids].clone()
                 obs_defaults[:, 0] = obs_x + self.scene.env_origins[env_ids, 0]
                 obs_defaults[:, 1] = obs_y + self.scene.env_origins[env_ids, 1]
-
-                # 如果落在 3m 内，将 Z 坐标设为 -10.0（挪到地面以下）
-                if safe_mask.any():
-                    obs_defaults[safe_mask, 2] = -10.0
 
                 self.obstacles[k].write_root_pose_to_sim(obs_defaults[:, :7], env_ids)
                 self.obstacles[k].write_root_velocity_to_sim(obs_defaults[:, 7:], env_ids)

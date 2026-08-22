@@ -1,0 +1,228 @@
+"""Manager-based 1024/2048-drone environment for the six training mazes."""
+
+from __future__ import annotations
+
+import isaaclab.sim as sim_utils
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
+from isaaclab.envs import ManagerBasedRLEnvCfg
+from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
+from isaaclab.managers import ObservationTermCfg as ObsTerm
+from isaaclab.managers import RewardTermCfg as RewTerm
+from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import TerminationTermCfg as DoneTerm
+from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sensors import ContactSensorCfg, TiledCameraCfg
+from isaaclab.utils import configclass
+
+from tutorial.assets.hummingbird import HUMMINGBIRD_CFG
+
+from . import mdp
+from .isolation import CAMERA_MAX_DISTANCE, DRONE_XY_LIMIT, ENV_SPACING, validate_isolation_settings
+from .layouts import ARENA_HALF_EXTENT, ARENA_HEIGHT, INNER_WALL_LENGTH, WALL_THICKNESS
+
+
+def _fixed_cuboid(size: tuple[float, float, float]) -> sim_utils.CuboidCfg:
+    return sim_utils.CuboidCfg(
+        size=size,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            kinematic_enabled=True,
+            disable_gravity=True,
+        ),
+        collision_props=sim_utils.CollisionPropertiesCfg(),
+    )
+
+
+@configclass
+class TrainingMazesSceneCfg(InteractiveSceneCfg):
+    """One independently simulated drone and maze per cloned environment."""
+
+    robot: ArticulationCfg = HUMMINGBIRD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+    floor = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/Floor",
+        spawn=_fixed_cuboid((2.0 * ARENA_HALF_EXTENT, 2.0 * ARENA_HALF_EXTENT, 0.1)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -0.05)),
+    )
+
+    boundary_north = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/BoundaryNorth",
+        spawn=_fixed_cuboid((2.0 * ARENA_HALF_EXTENT, WALL_THICKNESS, ARENA_HEIGHT)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, ARENA_HALF_EXTENT, ARENA_HEIGHT * 0.5)),
+    )
+    boundary_south = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/BoundarySouth",
+        spawn=_fixed_cuboid((2.0 * ARENA_HALF_EXTENT, WALL_THICKNESS, ARENA_HEIGHT)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, -ARENA_HALF_EXTENT, ARENA_HEIGHT * 0.5)),
+    )
+    boundary_east = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/BoundaryEast",
+        spawn=_fixed_cuboid((WALL_THICKNESS, 2.0 * ARENA_HALF_EXTENT, ARENA_HEIGHT)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(ARENA_HALF_EXTENT, 0.0, ARENA_HEIGHT * 0.5)),
+    )
+    boundary_west = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/BoundaryWest",
+        spawn=_fixed_cuboid((WALL_THICKNESS, 2.0 * ARENA_HALF_EXTENT, ARENA_HEIGHT)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(-ARENA_HALF_EXTENT, 0.0, ARENA_HEIGHT * 0.5)),
+    )
+
+    # Every maze uses the same three cuboids.  The reset event changes their
+    # poses and parks unused slots below the floor, preserving homogeneous
+    # cloned physics for high environment counts.
+    inner_wall_0 = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/InnerWall_0",
+        spawn=_fixed_cuboid((INNER_WALL_LENGTH, WALL_THICKNESS, ARENA_HEIGHT)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0)),
+    )
+    inner_wall_1 = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/InnerWall_1",
+        spawn=_fixed_cuboid((INNER_WALL_LENGTH, WALL_THICKNESS, ARENA_HEIGHT)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0)),
+    )
+    inner_wall_2 = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/InnerWall_2",
+        spawn=_fixed_cuboid((INNER_WALL_LENGTH, WALL_THICKNESS, ARENA_HEIGHT)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0)),
+    )
+
+    camera = TiledCameraCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/base_link/front_cam",
+        update_period=0.04,
+        height=48,
+        width=64,
+        data_types=["distance_to_image_plane"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=10.4775,
+            focus_distance=10.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.1, CAMERA_MAX_DISTANCE),
+        ),
+        offset=TiledCameraCfg.OffsetCfg(
+            pos=(0.0, 0.0, -1.0),
+            rot=(0.5, -0.5, 0.5, -0.5),
+            convention="ros",
+        ),
+    )
+
+    contact_forces = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/(base_link|rotor_0|rotor_1|rotor_2|rotor_3)",
+        update_period=1.0 / 120.0,
+        history_length=6,
+        debug_vis=False,
+    )
+
+    dome_light = AssetBaseCfg(
+        prim_path="/World/DomeLight",
+        spawn=sim_utils.DomeLightCfg(intensity=4000.0, color=(1.0, 1.0, 0.75)),
+    )
+
+
+@configclass
+class ActionsCfg:
+    velocity_yaw = mdp.VelocityYawActionCfg(asset_name="robot")
+
+
+@configclass
+class ObservationsCfg:
+    @configclass
+    class PolicyCfg(ObsGroup):
+        camera = ObsTerm(
+            func=mdp.normalized_depth_image,
+            params={"sensor_cfg": SceneEntityCfg("camera"), "max_distance": CAMERA_MAX_DISTANCE},
+            clip=(-1.0, 1.0),
+        )
+        robot_state = ObsTerm(func=mdp.robot_state, params={"asset_cfg": SceneEntityCfg("robot")})
+        critic_toa = ObsTerm(
+            func=mdp.privileged_toa_map,
+            params={"asset_cfg": SceneEntityCfg("robot"), "crop_size": 16},
+            clip=(-1.0, 1.0),
+        )
+
+        def __post_init__(self) -> None:
+            self.enable_corruption = False
+            self.concatenate_terms = False
+
+    policy: PolicyCfg = PolicyCfg()
+
+
+@configclass
+class EventCfg:
+    reset_scene = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+    reset_training_maze = EventTerm(func=mdp.reset_training_maze, mode="reset")
+
+
+@configclass
+class RewardsCfg:
+    goal_velocity = RewTerm(
+        func=mdp.velocity_towards_goal,
+        weight=0.5,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+    action_smoothness = RewTerm(func=mdp.action_smoothness, weight=-0.1)
+    collision = RewTerm(
+        func=mdp.collision_detected,
+        weight=-200.0,
+        params={"sensor_cfg": SceneEntityCfg("contact_forces"), "threshold": 1.0},
+    )
+    goal_reached = RewTerm(
+        func=mdp.goal_reached,
+        weight=300.0,
+        params={"asset_cfg": SceneEntityCfg("robot"), "threshold": 0.4},
+    )
+
+
+@configclass
+class TerminationsCfg:
+    time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    collision = DoneTerm(
+        func=mdp.collision_termination,
+        params={"sensor_cfg": SceneEntityCfg("contact_forces"), "threshold": 1.0},
+    )
+    goal_reached = DoneTerm(
+        func=mdp.goal_reached_termination,
+        params={"asset_cfg": SceneEntityCfg("robot"), "threshold": 0.4},
+    )
+    isolation_boundary = DoneTerm(
+        func=mdp.outside_isolated_arena,
+        params={"asset_cfg": SceneEntityCfg("robot"), "xy_limit": DRONE_XY_LIMIT},
+    )
+
+
+@configclass
+class TrainingMazes1024EnvCfg(ManagerBasedRLEnvCfg):
+    """Six-maze training task with 1024 independent drones."""
+
+    # Save one bundle/preview per maze type (six files of each kind), never per cloned drone.
+    save_global_toa_maps: bool = True
+    toa_map_output_dir: str = "outputs/training_maze_toa"
+
+    scene: TrainingMazesSceneCfg = TrainingMazesSceneCfg(
+        num_envs=4,
+        env_spacing=ENV_SPACING,
+        replicate_physics=True,
+        filter_collisions=True,
+    )
+    actions: ActionsCfg = ActionsCfg()
+    observations: ObservationsCfg = ObservationsCfg()
+    events: EventCfg = EventCfg()
+    rewards: RewardsCfg = RewardsCfg()
+    terminations: TerminationsCfg = TerminationsCfg()
+
+    def __post_init__(self) -> None:
+        self.decimation = 5
+        self.episode_length_s = 40.0
+        self.sim.dt = 1.0 / 120.0
+        self.sim.render_interval = self.decimation
+        self.sim.physx.enable_external_forces_every_iteration = True
+        self.viewer.eye = (28.0, 28.0, 24.0)
+        self.viewer.lookat = (0.0, 0.0, 1.5)
+        validate_isolation_settings(self.scene.env_spacing, CAMERA_MAX_DISTANCE, DRONE_XY_LIMIT)
+
+
+@configclass
+class TrainingMazes2048EnvCfg(TrainingMazes1024EnvCfg):
+    """Six-maze training task with 2048 independent drones."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.scene.num_envs = 4

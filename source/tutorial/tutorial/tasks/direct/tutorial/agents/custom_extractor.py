@@ -4,6 +4,31 @@ import torch.nn as nn
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 
+def _resolve_observation_key(observation_space: gym.spaces.Dict, *candidates: str) -> str:
+    """Return the first supported spelling of an observation key.
+
+    Direct environments historically use dashed keys while ManagerBased
+    observation terms use valid Python identifiers with underscores.
+    """
+
+    for key in candidates:
+        if key in observation_space.spaces:
+            return key
+    raise KeyError(
+        f"Expected one of {candidates!r} in observation space; "
+        f"available keys are {tuple(observation_space.spaces)}."
+    )
+
+
+def _resolve_optional_observation_key(observation_space: gym.spaces.Dict, *candidates: str) -> str | None:
+    """Return the first supported key, or ``None`` when the observation is optional."""
+
+    for key in candidates:
+        if key in observation_space.spaces:
+            return key
+    return None
+
+
 class CustomCombinedExtractor(BaseFeaturesExtractor):
     """
     占位特征提取器。
@@ -66,7 +91,8 @@ class ActorFeaturesExtractor(BaseFeaturesExtractor):
 
         # 2. Robot State Network (MLP)
         # Input: STATES["robot-state"]
-        robot_state_space = observation_space["robot-state"]
+        self.robot_state_key = _resolve_observation_key(observation_space, "robot-state", "robot_state")
+        robot_state_space = observation_space[self.robot_state_key]
         state_dim = robot_state_space.shape[0]
 
         # robot_state_extractor equivalent
@@ -124,7 +150,7 @@ class ActorFeaturesExtractor(BaseFeaturesExtractor):
         img_features = self.camera_fc(img_features)
 
         # 2. Process Robot State
-        obs_robot = observations["robot-state"]
+        obs_robot = observations[self.robot_state_key]
         if obs_robot.dim() == 1:
             obs_robot = obs_robot.unsqueeze(0)
         state_features = self.robot_state_mlp(obs_robot)
@@ -137,8 +163,8 @@ class ActorFeaturesExtractor(BaseFeaturesExtractor):
 class CriticFeaturesExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: gym.spaces.Dict):
         super().__init__(observation_space, features_dim=1)
-        critic_toa_space = observation_space["critic-toa"]
-        toa_input_channels = critic_toa_space.shape[0]
+        self.robot_state_key = _resolve_observation_key(observation_space, "robot-state", "robot_state")
+        self.critic_toa_key = _resolve_optional_observation_key(observation_space, "critic-toa", "critic_toa")
 
         camera_space = observation_space["camera"]
         n_input_channels = camera_space.shape[0]
@@ -153,13 +179,18 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
             nn.LeakyReLU(),
             nn.Flatten(),
         )
-        self.toa_cnn = nn.Sequential(
-            nn.Conv2d(toa_input_channels, 8, kernel_size=2, stride=1, padding=0),
-            nn.LeakyReLU(),
-            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=0),
-            nn.LeakyReLU(),
-            nn.Flatten(),
-        )
+        if self.critic_toa_key is not None:
+            critic_toa_space = observation_space[self.critic_toa_key]
+            toa_input_channels = critic_toa_space.shape[0]
+            self.toa_cnn = nn.Sequential(
+                nn.Conv2d(toa_input_channels, 8, kernel_size=2, stride=1, padding=0),
+                nn.LeakyReLU(),
+                nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=0),
+                nn.LeakyReLU(),
+                nn.Flatten(),
+            )
+        else:
+            self.toa_cnn = None
 
         # Compute CNN output dimension
         with torch.no_grad():
@@ -167,19 +198,20 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
             # Add batch dimension [1, C, H, W]
             sample = torch.as_tensor(camera_space.sample()[None]).float()
             cnn_output_dim = self.cnn(sample).shape[1]
-            sample_toa = torch.as_tensor(observation_space["critic-toa"].sample()[None]).float()
-            toa_cnn_output_dim = self.toa_cnn(sample_toa).shape[1]
+            if self.critic_toa_key is not None:
+                sample_toa = torch.as_tensor(observation_space[self.critic_toa_key].sample()[None]).float()
+                toa_cnn_output_dim = self.toa_cnn(sample_toa).shape[1]
 
         # features_fc equivalent
         self.camera_fc = nn.Linear(cnn_output_dim, 192)
 
         # 1. Robot State Network (MLP)
-        robot_state_space = observation_space["robot-state"]
+        robot_state_space = observation_space[self.robot_state_key]
         state_dim = robot_state_space.shape[0]
         self.robot_state_mlp = nn.Linear(state_dim, 192)
 
         # 2. Critic State Network (MLP)
-        self.toa_mlp = nn.Linear(toa_cnn_output_dim, 192)
+        self.toa_mlp = nn.Linear(toa_cnn_output_dim, 192) if self.critic_toa_key is not None else None
 
         # Total features dim is the sum of both MLP outputs
         self._features_dim = 192
@@ -225,20 +257,23 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
         img_features = self.cnn(obs_camera)
         img_features = self.camera_fc(img_features)
 
-        obs_robot = observations["robot-state"]
+        obs_robot = observations[self.robot_state_key]
         if obs_robot.dim() == 1:
             obs_robot = obs_robot.unsqueeze(0)
         state_features = self.robot_state_mlp(obs_robot)
 
-        obs_critic = observations["critic-toa"]
-        if obs_critic.dim() == 3:
-            obs_critic = obs_critic.unsqueeze(0)
-        critic_features = self.toa_cnn(obs_critic)
-        critic_features = self.toa_mlp(critic_features)
+        features = img_features + state_features
+        if self.critic_toa_key is not None:
+            obs_critic = observations[self.critic_toa_key]
+            if obs_critic.dim() == 3:
+                obs_critic = obs_critic.unsqueeze(0)
+            critic_features = self.toa_cnn(obs_critic)
+            critic_features = self.toa_mlp(critic_features)
+            features = features + critic_features
 
-        # Sum image, robot-state and critic features element-wise
-        # print("critic特征提取器的forward方法被调用了，img_features.shape:", img_features.shape, "state_features.shape:", state_features.shape, "critic_features.shape:", critic_features.shape)
-        return img_features + state_features + critic_features
+        # ManagerBased navigation currently has no privileged TOA observation,
+        # so its critic intentionally falls back to camera + robot state.
+        return features
 
 
 class GodViewExtractor(BaseFeaturesExtractor):
@@ -246,12 +281,14 @@ class GodViewExtractor(BaseFeaturesExtractor):
         super().__init__(observation_space, features_dim=1)
 
         # Calculate features dim
-        robot_state_dim = observation_space["robot-state"].shape[0]
-        critic_state_dim = int(torch.tensor(observation_space["critic-toa"].shape).prod().item())
+        self.robot_state_key = _resolve_observation_key(observation_space, "robot-state", "robot_state")
+        self.critic_toa_key = _resolve_observation_key(observation_space, "critic-toa", "critic_toa")
+        robot_state_dim = observation_space[self.robot_state_key].shape[0]
+        critic_state_dim = int(torch.tensor(observation_space[self.critic_toa_key].shape).prod().item())
         self._features_dim = robot_state_dim + critic_state_dim
 
     def forward(self, observations) -> torch.Tensor:
-        critic = observations["critic-toa"]
+        critic = observations[self.critic_toa_key]
         if critic.dim() > 2:
             critic = critic.flatten(start_dim=1)
-        return torch.cat([observations["robot-state"], critic], dim=1)
+        return torch.cat([observations[self.robot_state_key], critic], dim=1)
