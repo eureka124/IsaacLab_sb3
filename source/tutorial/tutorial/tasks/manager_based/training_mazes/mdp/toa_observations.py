@@ -11,6 +11,7 @@ from isaaclab.assets import Articulation
 from isaaclab.managers import SceneEntityCfg
 
 from tutorial.tasks.direct.tutorial.TOA import build_toa_map
+from tutorial.tasks.manager_based.toa_preview import toa_to_rgb
 
 from ..layouts import (
     ARENA_HALF_EXTENT,
@@ -132,17 +133,17 @@ def _save_toa_bank_by_maze(map_bank: torch.Tensor, output_dir: str) -> None:
         panel_size = TOA_GRID_SIZE
         preview = Image.new("RGB", (panel_size * 2, panel_size * 2), color=(255, 255, 255))
         for variant_id, title in enumerate(variant_titles):
-            clipped = np.clip(maze_maps[variant_id], 0.0, TOA_NORMALIZATION_MAX)
-            grayscale = 255 - np.rint(clipped / TOA_NORMALIZATION_MAX * 255.0).astype(np.uint8)
-            panel = Image.fromarray(np.flipud(grayscale), mode="L").convert("RGB")
+            rgb, display_max = toa_to_rgb(maze_maps[variant_id])
+            panel = Image.fromarray(np.flipud(rgb), mode="RGB")
             draw = ImageDraw.Draw(panel)
             goal_x = int(round((goals[variant_id, 0] + ARENA_HALF_EXTENT) / (2.0 * ARENA_HALF_EXTENT) * 200))
             goal_y = 200 - int(
                 round((goals[variant_id, 1] + ARENA_HALF_EXTENT) / (2.0 * ARENA_HALF_EXTENT) * 200)
             )
             draw.ellipse((goal_x - 4, goal_y - 4, goal_x + 4, goal_y + 4), fill=(255, 0, 0))
-            draw.rectangle((0, 0, 104, 13), fill=(255, 255, 255))
-            draw.text((2, 1), title, fill=(0, 0, 0))
+            label = f"{title} max={display_max:.1f}"
+            draw.rectangle((0, 0, 148, 13), fill=(255, 255, 255))
+            draw.text((2, 1), label, fill=(0, 0, 0))
             preview.paste(panel, ((variant_id % 2) * panel_size, (variant_id // 2) * panel_size))
         preview.save(output_path / f"{layout.name}_toa.png")
 

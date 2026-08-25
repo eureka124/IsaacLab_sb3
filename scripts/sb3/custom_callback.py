@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import wandb
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 
+from episode_metrics import EpisodeOutcomeWindow
+
 
 class CheckpointCallbackWithLimit(CheckpointCallback):
     """
@@ -82,68 +84,51 @@ class IsaacLogCallback(BaseCallback):
     A custom callback that logs Isaac Lab specific metrics (success, collision, timeout)
     to TensorBoard.
 
-    It accumulates the boolean flags from the environment's `extras` and logs the
-    rates every `log_freq` episodes.
+    It accumulates per-environment terminal flags and logs the rates after at
+    least ``log_freq`` completed episodes. Every done episode contributes to the
+    denominator, including boundary failures that are not one of the three
+    requested outcome categories.
     """
 
     def __init__(self, log_freq: int = 1000, verbose=0):
         super().__init__(verbose)
-        self.log_freq = log_freq
+        self.outcomes = EpisodeOutcomeWindow(minimum_episodes=log_freq)
 
-        # Accumulators
-        self.success_count = 0.0
-        self.collision_count = 0.0
-        self.timeout_count = 0.0
-        self.total_episodes = 0
+    @staticmethod
+    def _as_bool(value) -> bool:
+        """Convert scalar tensors, NumPy scalars, and Python values to bool."""
+
+        if hasattr(value, "item"):
+            value = value.item()
+        return bool(value)
 
     def _on_step(self) -> bool:
-        # self.locals["infos"] contains the list of info dicts for the current step
-        infos = self.locals["infos"]
+        infos = self.locals.get("infos", ())
+        dones = self.locals.get("dones")
 
-        for info in infos:
-            # Check if one of the termination flags is present and true
-            # Note: In Sb3Env, these are booleans/floats in `extras`
+        for index, info in enumerate(infos):
+            done = (
+                self._as_bool(dones[index])
+                if dones is not None
+                else info.get("episode") is not None
+            )
+            if not done:
+                continue
 
-            s = info.get("success", 0)
-            c = info.get("collided", 0)
-            t = info.get("time_out", 0)
+            self.outcomes.add(
+                success=self._as_bool(info.get("success", info.get("is_success", False))),
+                collision=self._as_bool(info.get("collided", False)),
+                timeout=self._as_bool(
+                    info.get("time_out", info.get("TimeLimit.truncated", False))
+                ),
+            )
 
-            # Convert tensors to float/bool
-            if hasattr(s, "item"):
-                s = s.item()
-            if hasattr(c, "item"):
-                c = c.item()
-            if hasattr(t, "item"):
-                t = t.item()
-
-            # Check if episode terminated (any of these flags is true)
-            if s or c or t:
-                self.total_episodes += 1
-                self.success_count += float(s)
-                self.collision_count += float(c)
-                self.timeout_count += float(t)
-
-        # Log metrics if we collected enough episodes
-        if self.total_episodes >= self.log_freq:
-            # Normalize to get rate [0, 1]
-            success_rate = self.success_count / self.total_episodes
-            collision_rate = self.collision_count / self.total_episodes
-            timeout_rate = self.timeout_count / self.total_episodes
-
-            # Record to TensorBoard
-            self.logger.record("Metrics/Success_Rate", success_rate)
-            self.logger.record("Metrics/Collision_Rate", collision_rate)
-            self.logger.record("Metrics/Timeout_Rate", timeout_rate)
-
-            # Dump logs to ensure they are written immediately
-            # self.logger.dump(step=self.num_timesteps)
-            # Note: PPO usually dumps logs at its own interval, but record puts it in the buffer.
-
-            # Reset accumulators
-            self.success_count = 0.0
-            self.collision_count = 0.0
-            self.timeout_count = 0.0
-            self.total_episodes = 0
+        if self.outcomes.ready:
+            rates = self.outcomes.consume()
+            self.logger.record("Metrics/Success_Rate", rates["success_rate"])
+            self.logger.record("Metrics/Collision_Rate", rates["collision_rate"])
+            self.logger.record("Metrics/Timeout_Rate", rates["timeout_rate"])
+            self.logger.record("Metrics/Episodes", rates["episodes"])
 
         return True
 

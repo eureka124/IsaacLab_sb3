@@ -1,4 +1,4 @@
-"""MDP terms for the training-maze task."""
+"""MDP terms owned by the independent test-maze task."""
 
 from isaaclab.envs.mdp import *  # noqa: F401, F403
 
@@ -13,10 +13,10 @@ from tutorial.tasks.manager_based.tutorial.mdp.rewards import (
     velocity_towards_goal,
 )
 
-from .events import reset_training_maze
 from ...navigation_markers import reset_navigation_markers, update_navigation_markers
-from .terminations import outside_isolated_arena
-from .toa_observations import privileged_toa_map
+from .events import move_test_obstacles, reset_test_maze
+from .terminations import outside_test_arena
+from .toa_observations import privileged_test_toa_map
 
 __all__ = [
     "VelocityYawActionCfg",
@@ -25,11 +25,12 @@ __all__ = [
     "collision_termination",
     "goal_reached",
     "goal_reached_termination",
+    "move_test_obstacles",
     "normalized_depth_image",
-    "outside_isolated_arena",
-    "privileged_toa_map",
+    "outside_test_arena",
+    "privileged_test_toa_map",
     "reset_navigation_markers",
-    "reset_training_maze",
+    "reset_test_maze",
     "robot_state",
     "update_navigation_markers",
     "velocity_towards_goal",

@@ -1,6 +1,7 @@
 """Generate and save robot-aligned critic TOA samples for inspection.
 
-Run with: python scripts/save_critic_toa_samples.py
+Run with:
+python scripts/save_critic_toa_samples.py --headless --num_envs 4 --enable_cameras
 
 This script requires IsaacLab to be properly initialized via AppLauncher.
 """
