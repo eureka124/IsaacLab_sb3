@@ -4,3 +4,7 @@
 [submodule "source/thirdparty/stable-baselines3-contrib"]
 	path = source/thirdparty/stable-baselines3-contrib
 	url = git@github.com:eureka124/stable-baselines3-contrib
+[submodule "source/thirdparty/OmniDrones"]
+	path = source/thirdparty/OmniDrones
+	url = https://github.com/eureka124/OmniDrones.git
+	branch = tutorial-integration
