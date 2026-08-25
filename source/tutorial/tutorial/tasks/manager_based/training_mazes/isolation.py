@@ -4,8 +4,8 @@ from __future__ import annotations
 
 
 CAMERA_MAX_DISTANCE = 12.0
-DRONE_XY_LIMIT = 9.5
-ENV_SPACING = 50.0
+DRONE_XY_LIMIT = 19.5
+ENV_SPACING = 52.0
 
 
 def minimum_cross_environment_drone_distance(

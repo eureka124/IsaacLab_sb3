@@ -1,6 +1,6 @@
 """Geometry and navigation pairs for the six mazes in ``训练环境.jpg``.
 
-Coordinates are local to one 20 m x 20 m cloned environment.  All inner
+Coordinates in the source layout are scaled into one 40 m x 40 m cloned environment.  All inner
 walls deliberately share one primitive size; layouts only change poses.  This
 keeps physics replication enabled when thousands of environments are used.
 """
@@ -10,11 +10,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-ARENA_HALF_EXTENT = 10.0
+MAZE_PLANAR_SCALE = 2.0
+ARENA_HALF_EXTENT = 10.0 * MAZE_PLANAR_SCALE
 ARENA_HEIGHT = 4.0
-WALL_THICKNESS = 0.35
-INNER_WALL_LENGTH = 6.0
+WALL_THICKNESS = 0.35 * MAZE_PLANAR_SCALE
+INNER_WALL_LENGTH = 6.0 * MAZE_PLANAR_SCALE
 MAX_INNER_WALLS = 3
+
+RANDOM_CYLINDER_COUNT = 60
+RANDOM_CYLINDER_VARIANTS = ((0.30, 2.5), (0.45, 3.2), (0.60, 4.0))
+RANDOM_CYLINDER_SPECS = tuple(
+    RANDOM_CYLINDER_VARIANTS[index % len(RANDOM_CYLINDER_VARIANTS)]
+    for index in range(RANDOM_CYLINDER_COUNT)
+)
+RANDOM_CYLINDER_CLEARANCE = 0.35
+RANDOM_CYLINDER_START_GOAL_CLEARANCE = 1.0
+RANDOM_CYLINDER_MAX_ATTEMPTS = 128
 
 
 @dataclass(frozen=True)
@@ -36,7 +47,7 @@ class MazeLayout:
 
 # Numbered clockwise from the upper-left, as specified by the source figure.
 # A yaw of pi/2 turns the common horizontal cuboid into a vertical wall.
-MAZE_LAYOUTS = (
+_BASE_MAZE_LAYOUTS = (
     MazeLayout(
         name="maze_01",
         walls=(InnerWall((0.0, 0.5)),),
@@ -89,6 +100,28 @@ MAZE_LAYOUTS = (
             ((3.0, -4.5), (2.0, 5.5)),
         ),
     ),
+)
+
+
+MAZE_LAYOUTS = tuple(
+    MazeLayout(
+        name=layout.name,
+        walls=tuple(
+            InnerWall(
+                (wall.center_xy[0] * MAZE_PLANAR_SCALE, wall.center_xy[1] * MAZE_PLANAR_SCALE),
+                wall.yaw,
+            )
+            for wall in layout.walls
+        ),
+        start_goal_pairs=tuple(
+            (
+                (start[0] * MAZE_PLANAR_SCALE, start[1] * MAZE_PLANAR_SCALE),
+                (goal[0] * MAZE_PLANAR_SCALE, goal[1] * MAZE_PLANAR_SCALE),
+            )
+            for start, goal in layout.start_goal_pairs
+        ),
+    )
+    for layout in _BASE_MAZE_LAYOUTS
 )
 
 

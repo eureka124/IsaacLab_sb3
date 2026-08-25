@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg, RigidObjectCollectionCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -19,7 +19,13 @@ from tutorial.assets.hummingbird import HUMMINGBIRD_CFG
 
 from . import mdp
 from .isolation import CAMERA_MAX_DISTANCE, DRONE_XY_LIMIT, ENV_SPACING, validate_isolation_settings
-from .layouts import ARENA_HALF_EXTENT, ARENA_HEIGHT, INNER_WALL_LENGTH, WALL_THICKNESS
+from .layouts import (
+    ARENA_HALF_EXTENT,
+    ARENA_HEIGHT,
+    INNER_WALL_LENGTH,
+    RANDOM_CYLINDER_SPECS,
+    WALL_THICKNESS,
+)
 
 
 def _fixed_cuboid(size: tuple[float, float, float]) -> sim_utils.CuboidCfg:
@@ -30,6 +36,20 @@ def _fixed_cuboid(size: tuple[float, float, float]) -> sim_utils.CuboidCfg:
             disable_gravity=True,
         ),
         collision_props=sim_utils.CollisionPropertiesCfg(),
+    )
+
+
+def _fixed_cylinder(radius: float, height: float) -> sim_utils.CylinderCfg:
+    return sim_utils.CylinderCfg(
+        radius=radius,
+        height=height,
+        axis="Z",
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            kinematic_enabled=True,
+            disable_gravity=True,
+        ),
+        collision_props=sim_utils.CollisionPropertiesCfg(),
+        visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.32, 0.43, 0.55)),
     )
 
 
@@ -83,6 +103,19 @@ class TrainingMazesSceneCfg(InteractiveSceneCfg):
         prim_path="{ENV_REGEX_NS}/InnerWall_2",
         spawn=_fixed_cuboid((INNER_WALL_LENGTH, WALL_THICKNESS, ARENA_HEIGHT)),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0)),
+    )
+
+    # Cylinder geometry stays fixed for the lifetime of the simulation.  The
+    # reset event randomizes only XY poses, which preserves physics replication.
+    random_cylinders = RigidObjectCollectionCfg(
+        rigid_objects={
+            f"cylinder_{index:02d}": RigidObjectCfg(
+                prim_path=f"{{ENV_REGEX_NS}}/RandomCylinder_{index:02d}",
+                spawn=_fixed_cylinder(radius, height),
+                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -10.0)),
+            )
+            for index, (radius, height) in enumerate(RANDOM_CYLINDER_SPECS)
+        }
     )
 
     camera = TiledCameraCfg(

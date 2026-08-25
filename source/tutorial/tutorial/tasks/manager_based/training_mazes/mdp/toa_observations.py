@@ -22,7 +22,7 @@ from ..layouts import (
 )
 
 
-TOA_GRID_SIZE = 201
+TOA_GRID_SIZE = 401
 TOA_CROP_SIZE = 16
 TOA_ROBOT_RADIUS = 0.4
 TOA_SAFE_DISTANCE = 2.0
@@ -131,14 +131,25 @@ def _save_toa_bank_by_maze(map_bank: torch.Tensor, output_dir: str) -> None:
         )
 
         panel_size = TOA_GRID_SIZE
+        panel_last_index = panel_size - 1
         preview = Image.new("RGB", (panel_size * 2, panel_size * 2), color=(255, 255, 255))
         for variant_id, title in enumerate(variant_titles):
             rgb, display_max = toa_to_rgb(maze_maps[variant_id])
             panel = Image.fromarray(np.flipud(rgb), mode="RGB")
             draw = ImageDraw.Draw(panel)
-            goal_x = int(round((goals[variant_id, 0] + ARENA_HALF_EXTENT) / (2.0 * ARENA_HALF_EXTENT) * 200))
-            goal_y = 200 - int(
-                round((goals[variant_id, 1] + ARENA_HALF_EXTENT) / (2.0 * ARENA_HALF_EXTENT) * 200)
+            goal_x = int(
+                round(
+                    (goals[variant_id, 0] + ARENA_HALF_EXTENT)
+                    / (2.0 * ARENA_HALF_EXTENT)
+                    * panel_last_index
+                )
+            )
+            goal_y = panel_last_index - int(
+                round(
+                    (goals[variant_id, 1] + ARENA_HALF_EXTENT)
+                    / (2.0 * ARENA_HALF_EXTENT)
+                    * panel_last_index
+                )
             )
             draw.ellipse((goal_x - 4, goal_y - 4, goal_x + 4, goal_y + 4), fill=(255, 0, 0))
             label = f"{title} max={display_max:.1f}"
