@@ -1,5 +1,11 @@
 seed: 123
 
+# Training-script options (removed before constructing RecurrentPPO).
+verbose: 1
+sb3_wrapper_fast_variant: false
+checkpoint_max_keep: 20
+episode_metrics_log_freq: 100
+
 n_timesteps: !!float 7e7
 policy: "MultiInputLstmPolicy"
 n_steps: 512
@@ -13,6 +19,7 @@ clip_range: !!float 0.2
 clip_range_vf: !!float 0.2
 policy_kwargs:
   activation_fn: nn.LeakyReLU
+  share_features_extractor: false
   net_arch:
     pi: [256, 256]
     vf: [256, 256]

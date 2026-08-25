@@ -257,9 +257,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     start_time = time.time()
 
-    # wrap around environment for stable baselines
-    # Force fast_variant=False to ensure we get 'success', 'collided', 'time_out' in infos for logging
-    env = Sb3VecEnvWrapper(env, fast_variant=False)
+    # Script-level options live in the agent YAML but must not be passed to SB3.
+    wrapper_fast_variant = bool(agent_cfg.pop("sb3_wrapper_fast_variant", False))
+    agent_verbose = int(agent_cfg.pop("verbose", 1))
+    checkpoint_max_keep = int(agent_cfg.pop("checkpoint_max_keep", 20))
+    episode_metrics_log_freq = int(agent_cfg.pop("episode_metrics_log_freq", 100))
+
+    # Keep the slow information path by default so terminal outcome metrics are available.
+    env = Sb3VecEnvWrapper(env, fast_variant=wrapper_fast_variant)
 
     norm_keys = {"normalize_input", "normalize_value", "clip_obs"}
     norm_args = {}
@@ -282,7 +287,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # create agent from stable baselines
     # Modify policy_kwargs to include custom features extractor
     policy_kwargs = agent_cfg.get("policy_kwargs", {})
-    policy_kwargs["share_features_extractor"] = False
+    policy_kwargs.setdefault("share_features_extractor", False)
     policy_kwargs.pop("features_extractor_class", None)
     policy_kwargs.pop("features_extractor_kwargs", None)
     policy_kwargs["actor_features_extractor_class"] = ActorFeaturesExtractor
@@ -291,7 +296,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     print(policy_kwargs)
     agent_cfg["policy_kwargs"] = policy_kwargs
     print(agent_cfg)
-    agent = RecurrentPPO(policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg)
+    agent = RecurrentPPO(policy_arch, env, verbose=agent_verbose, tensorboard_log=log_dir, **agent_cfg)
     if args_cli.checkpoint is not None:
         agent = agent.load(args_cli.checkpoint, env, print_system_info=True)
 
@@ -325,9 +330,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         save_path=log_dir,
         name_prefix="model",
         verbose=2,
-        max_keep=20,
+        max_keep=checkpoint_max_keep,
     )
-    isaac_log_callback = IsaacLogCallback(log_freq=100)  # 每100个episode记录一次
+    isaac_log_callback = IsaacLogCallback(log_freq=episode_metrics_log_freq)
     callbacks = [
         checkpoint_callback,
         LogEveryNTimesteps(n_steps=args_cli.log_interval),
