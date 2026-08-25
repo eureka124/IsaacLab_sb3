@@ -146,7 +146,7 @@ class TrainingMazesSceneCfg(InteractiveSceneCfg):
 
     dome_light = AssetBaseCfg(
         prim_path="/World/DomeLight",
-        spawn=sim_utils.DomeLightCfg(intensity=4000.0, color=(1.0, 1.0, 0.75)),
+        spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(1.0, 1.0, 0.75)),
     )
 
 
@@ -229,8 +229,8 @@ class TerminationsCfg:
 
 
 @configclass
-class TrainingMazes1024EnvCfg(ManagerBasedRLEnvCfg):
-    """Six-maze training task with 1024 independent drones."""
+class TrainingMazesEnvCfg(ManagerBasedRLEnvCfg):
+    """Six-maze training task with a runtime-configurable number of drones."""
 
     # Save one bundle/preview per maze type (six files of each kind), never per cloned drone.
     save_global_toa_maps: bool = True
@@ -265,12 +265,3 @@ class TrainingMazes1024EnvCfg(ManagerBasedRLEnvCfg):
         self.viewer.eye = (28.0, 28.0, 24.0)
         self.viewer.lookat = (0.0, 0.0, 1.5)
         validate_isolation_settings(self.scene.env_spacing, CAMERA_MAX_DISTANCE, DRONE_XY_LIMIT)
-
-
-@configclass
-class TrainingMazes2048EnvCfg(TrainingMazes1024EnvCfg):
-    """Six-maze training task with 2048 independent drones."""
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        self.scene.num_envs = 4

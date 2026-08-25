@@ -14,8 +14,9 @@ clip_range_vf: !!float 0.2
 policy_kwargs:
   activation_fn: nn.LeakyReLU
   net_arch:
-    pi: [512, 512]
+    pi: [256, 256]
     vf: [256, 256]
+  lstm_hidden_size: 128
   squash_output: False
   log_std_init: 0.0
 vf_coef: 2.0

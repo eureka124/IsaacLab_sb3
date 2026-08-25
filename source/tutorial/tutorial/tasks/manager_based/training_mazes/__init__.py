@@ -10,7 +10,7 @@ gym.register(
     entry_point=f"{__name__}.training_mazes_env:TrainingMazesEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": f"{__name__}.training_mazes_env_cfg:TrainingMazes1024EnvCfg",
+        "env_cfg_entry_point": f"{__name__}.training_mazes_env_cfg:TrainingMazesEnvCfg",
         "sb3_cfg_entry_point": f"{agents.__name__}:sb3_ppo_cfg.yaml",
     },
 )
@@ -20,7 +20,7 @@ gym.register(
     entry_point=f"{__name__}.training_mazes_env:TrainingMazesEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": f"{__name__}.training_mazes_env_cfg:TrainingMazes2048EnvCfg",
+        "env_cfg_entry_point": f"{__name__}.training_mazes_env_cfg:TrainingMazesEnvCfg",
         "sb3_cfg_entry_point": f"{agents.__name__}:sb3_ppo_cfg.yaml",
     },
 )

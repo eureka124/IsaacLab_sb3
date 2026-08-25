@@ -75,6 +75,9 @@ class ActorFeaturesExtractor(BaseFeaturesExtractor):
             nn.LeakyReLU(),
             nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=0),
             nn.LeakyReLU(),
+            # Keep the feature size bounded before the projection layer.  This
+            # also makes the extractor robust to different camera resolutions.
+            nn.AdaptiveAvgPool2d((2, 3)),
             nn.Flatten(),
         )
 
@@ -177,6 +180,7 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
             nn.LeakyReLU(),
             nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=0),
             nn.LeakyReLU(),
+            nn.AdaptiveAvgPool2d((2, 3)),
             nn.Flatten(),
         )
         if self.critic_toa_key is not None:
@@ -187,6 +191,7 @@ class CriticFeaturesExtractor(BaseFeaturesExtractor):
                 nn.LeakyReLU(),
                 nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=0),
                 nn.LeakyReLU(),
+                nn.AdaptiveAvgPool2d((2, 3)),
                 nn.Flatten(),
             )
         else:

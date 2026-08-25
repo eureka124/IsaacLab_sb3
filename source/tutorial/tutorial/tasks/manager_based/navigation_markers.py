@@ -29,7 +29,7 @@ class _NavigationMarkerState:
                     "goal": sim_utils.SphereCfg(
                         radius=0.25,
                         visual_material=sim_utils.PreviewSurfaceCfg(
-                            diffuse_color=(0.1, 0.9, 0.2), emissive_color=(0.02, 0.15, 0.03)
+                            diffuse_color=(0.35, 0.75, 1.0), emissive_color=(0.03, 0.10, 0.18)
                         ),
                     )
                 },
@@ -44,7 +44,7 @@ class _NavigationMarkerState:
                         height=1.0,
                         axis="X",
                         visual_material=sim_utils.PreviewSurfaceCfg(
-                            diffuse_color=(0.1, 0.45, 1.0), emissive_color=(0.02, 0.06, 0.2)
+                            diffuse_color=(1.0, 0.05, 0.05), emissive_color=(0.20, 0.01, 0.01)
                         ),
                     )
                 },
@@ -57,7 +57,7 @@ class _NavigationMarkerState:
                     "trail": sim_utils.SphereCfg(
                         radius=0.065,
                         visual_material=sim_utils.PreviewSurfaceCfg(
-                            diffuse_color=(1.0, 0.55, 0.05), emissive_color=(0.18, 0.06, 0.0)
+                            diffuse_color=(0.55, 1.0, 0.65), emissive_color=(0.05, 0.15, 0.07)
                         ),
                     )
                 },
