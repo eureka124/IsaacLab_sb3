@@ -217,6 +217,11 @@ def reset_training_maze(env, env_ids: torch.Tensor) -> None:
         env.direction_reversed = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
     if not hasattr(env, "toa_map_ids"):
         env.toa_map_ids = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+    if not hasattr(env, "_toa_reward_previous"):
+        env._toa_reward_previous = torch.full((env.num_envs,), torch.nan, device=env.device)
+    else:
+        # The first transition of every new episode has no previous TOA frame.
+        env._toa_reward_previous[env_ids] = torch.nan
 
     env.maze_ids[env_ids] = maze_ids
     env.start_goal_pair_ids[env_ids] = pair_ids

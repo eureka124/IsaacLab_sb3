@@ -17,6 +17,7 @@ from .events import reset_training_maze
 from ...navigation_markers import reset_navigation_markers, update_navigation_markers
 from .terminations import outside_isolated_arena
 from .toa_observations import privileged_toa_map
+from .toa_rewards import toa_progress
 
 __all__ = [
     "VelocityYawActionCfg",
@@ -28,6 +29,7 @@ __all__ = [
     "normalized_depth_image",
     "outside_isolated_arena",
     "privileged_toa_map",
+    "toa_progress",
     "reset_navigation_markers",
     "reset_training_maze",
     "robot_state",

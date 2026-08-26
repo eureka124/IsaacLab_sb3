@@ -209,6 +209,11 @@ class RewardsCfg:
         weight=300.0,
         params={"asset_cfg": SceneEntityCfg("robot"), "threshold": 0.4},
     )
+    toa_progress = RewTerm(
+        func=mdp.toa_progress,
+        weight=10.0,
+        params={"asset_cfg": SceneEntityCfg("robot"), "scale": 1.0, "clip": 1.0},
+    )
 
 
 @configclass
