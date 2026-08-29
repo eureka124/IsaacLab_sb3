@@ -17,6 +17,7 @@ from isaaclab.utils import configclass
 
 from tutorial.assets.hummingbird import HUMMINGBIRD_CFG
 
+from ..tutorial.alignment import TUTORIAL_DEPTH_MAX_DISTANCE
 from . import mdp
 from .isolation import CAMERA_MAX_DISTANCE, DRONE_XY_LIMIT, ENV_SPACING, validate_isolation_settings
 from .layouts import (
@@ -161,7 +162,13 @@ class ObservationsCfg:
     class PolicyCfg(ObsGroup):
         camera = ObsTerm(
             func=mdp.normalized_depth_image,
-            params={"sensor_cfg": SceneEntityCfg("camera"), "max_distance": CAMERA_MAX_DISTANCE},
+            # TutorialEnv clips/normalizes depth at 10 m. The camera keeps its
+            # wider isolation-safe clipping range, but values beyond 10 m are
+            # represented identically to the direct environment.
+            params={
+                "sensor_cfg": SceneEntityCfg("camera"),
+                "max_distance": TUTORIAL_DEPTH_MAX_DISTANCE,
+            },
             clip=(-1.0, 1.0),
         )
         robot_state = ObsTerm(func=mdp.robot_state, params={"asset_cfg": SceneEntityCfg("robot")})
@@ -209,16 +216,11 @@ class RewardsCfg:
         weight=300.0,
         params={"asset_cfg": SceneEntityCfg("robot"), "threshold": 0.4},
     )
-    toa_progress = RewTerm(
-        func=mdp.toa_progress,
-        weight=10.0,
-        params={"asset_cfg": SceneEntityCfg("robot"), "scale": 1.0, "clip": 1.0},
-    )
 
 
 @configclass
 class TerminationsCfg:
-    time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    time_out = DoneTerm(func=mdp.tutorial_time_out, time_out=True)
     collision = DoneTerm(
         func=mdp.collision_termination,
         params={"sensor_cfg": SceneEntityCfg("contact_forces"), "threshold": 1.0},
@@ -266,7 +268,8 @@ class TrainingMazesEnvCfg(ManagerBasedRLEnvCfg):
         self.episode_length_s = 40.0
         self.sim.dt = 1.0 / 120.0
         self.sim.render_interval = self.decimation
-        self.sim.physx.enable_external_forces_every_iteration = True
+        self.sim.physx.enable_external_forces_every_iteration = False
+        mdp.set_direct_tutorial_reward_weights(self.rewards, self.decimation * self.sim.dt)
         self.viewer.eye = (28.0, 28.0, 24.0)
         self.viewer.lookat = (0.0, 0.0, 1.5)
         validate_isolation_settings(self.scene.env_spacing, CAMERA_MAX_DISTANCE, DRONE_XY_LIMIT)

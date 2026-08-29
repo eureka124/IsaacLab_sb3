@@ -13,6 +13,7 @@ from isaaclab.managers import SceneEntityCfg
 
 from tutorial.tasks.direct.tutorial.TOA import build_toa_map
 from tutorial.tasks.manager_based.toa_preview import toa_to_rgb
+from tutorial.tasks.manager_based.tutorial.alignment import TUTORIAL_TOA_CROP_GRID_SPACING
 
 from ..layout import (
     TEST_ARENA_HALF_X,
@@ -173,21 +174,21 @@ def _get_test_toa_cache(env, crop_size: int) -> tuple[torch.Tensor, torch.Tensor
     if hasattr(env, cache_name):
         return getattr(env, cache_name)
 
-    map_bank, grid_spacing = _build_test_toa_bank(env.device)
+    map_bank, map_grid_spacing = _build_test_toa_bank(env.device)
     cfg = getattr(env, "cfg", None)
     if bool(getattr(cfg, "save_global_toa_maps", False)):
         _save_test_toa_bank(map_bank, getattr(cfg, "toa_map_output_dir", "outputs/test_maze_toa"))
 
-    half_extent = crop_size * grid_spacing * 0.5
+    half_extent = crop_size * TUTORIAL_TOA_CROP_GRID_SPACING * 0.5
     coordinates = torch.linspace(
-        -half_extent + grid_spacing * 0.5,
-        half_extent - grid_spacing * 0.5,
+        -half_extent + TUTORIAL_TOA_CROP_GRID_SPACING * 0.5,
+        half_extent - TUTORIAL_TOA_CROP_GRID_SPACING * 0.5,
         steps=crop_size,
         device=env.device,
     )
     grid_x, grid_y = torch.meshgrid(coordinates, coordinates, indexing="xy")
     crop_grid_body = torch.stack((grid_x, grid_y), dim=-1).reshape(-1, 2)
-    cached = (map_bank, crop_grid_body, grid_spacing)
+    cached = (map_bank, crop_grid_body, map_grid_spacing)
     setattr(env, cache_name, cached)
     return cached
 

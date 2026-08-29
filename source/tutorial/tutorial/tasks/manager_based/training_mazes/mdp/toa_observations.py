@@ -12,6 +12,7 @@ from isaaclab.managers import SceneEntityCfg
 
 from tutorial.tasks.direct.tutorial.TOA import build_toa_map
 from tutorial.tasks.manager_based.toa_preview import toa_to_rgb
+from tutorial.tasks.manager_based.tutorial.alignment import TUTORIAL_TOA_CROP_GRID_SPACING
 
 from ..layouts import (
     ARENA_HALF_EXTENT,
@@ -182,18 +183,18 @@ def _get_toa_cache(env, crop_size: int) -> tuple[torch.Tensor, torch.Tensor, flo
     if hasattr(env, cache_name):
         return getattr(env, cache_name)
 
-    map_bank, grid_spacing = _get_toa_bank_cache(env)
-    half_extent = crop_size * grid_spacing * 0.5
+    map_bank, map_grid_spacing = _get_toa_bank_cache(env)
+    half_extent = crop_size * TUTORIAL_TOA_CROP_GRID_SPACING * 0.5
     coordinates = torch.linspace(
-        -half_extent + grid_spacing * 0.5,
-        half_extent - grid_spacing * 0.5,
+        -half_extent + TUTORIAL_TOA_CROP_GRID_SPACING * 0.5,
+        half_extent - TUTORIAL_TOA_CROP_GRID_SPACING * 0.5,
         steps=crop_size,
         device=env.device,
         dtype=torch.float32,
     )
     grid_x, grid_y = torch.meshgrid(coordinates, coordinates, indexing="xy")
     crop_grid_body = torch.stack((grid_x, grid_y), dim=-1).reshape(-1, 2)
-    cached = (map_bank, crop_grid_body, grid_spacing)
+    cached = (map_bank, crop_grid_body, map_grid_spacing)
     setattr(env, cache_name, cached)
     return cached
 

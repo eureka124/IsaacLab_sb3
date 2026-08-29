@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from isaaclab.envs import ManagerBasedRLEnv
+from tutorial.tasks.manager_based.tutorial.tutorial_env import TutorialManagerEnv
 
 
-class TrainingMazesEnv(ManagerBasedRLEnv):
+class TrainingMazesEnv(TutorialManagerEnv):
     """Expose each cloned environment's terminal reason to RL wrappers.
 
     Isaac Lab's termination manager retains the term values computed immediately

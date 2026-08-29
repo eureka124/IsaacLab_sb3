@@ -2,10 +2,9 @@ import gymnasium as gym
 
 from . import agents
 
-
 gym.register(
-    id="Template-Tutorial-ManagerBased-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    id="Tutorial-Manager-v0",
+    entry_point=f"{__name__}.tutorial_env:TutorialManagerEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.tutorial_env_cfg:TutorialManagerBasedEnvCfg",

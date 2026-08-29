@@ -7,7 +7,7 @@ from ..tutorial import agents
 
 gym.register(
     id="Template-Test-Maze-ManagerBased-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point="tutorial.tasks.manager_based.tutorial.tutorial_env:TutorialManagerEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.test_maze_env_cfg:TestMazeEnvCfg",

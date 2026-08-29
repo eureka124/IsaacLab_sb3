@@ -22,6 +22,7 @@ class VelocityYawAction(ActionTerm):
 
         self._raw_actions = torch.zeros(self.num_envs, 3, device=self.device)
         self._processed_actions = torch.zeros_like(self._raw_actions)
+        self._previous_processed_actions = torch.zeros_like(self._raw_actions)
         self._target_pos_setpoint = self._asset.data.root_pos_w.clone()
         self._target_yaw_setpoint = torch.zeros(self.num_envs, 1, device=self.device)
         self._base_link_ids, body_names = self._asset.find_bodies(cfg.body_name)
@@ -56,12 +57,16 @@ class VelocityYawAction(ActionTerm):
     def processed_actions(self) -> torch.Tensor:
         return self._processed_actions
 
+    @property
+    def previous_processed_actions(self) -> torch.Tensor:
+        return self._previous_processed_actions
+
     def process_actions(self, actions: torch.Tensor) -> None:
+        self._previous_processed_actions.copy_(self._processed_actions)
         self._raw_actions[:] = actions
-        normalized_actions = actions.clamp(-1.0, 1.0)
-        self._processed_actions[:, 0] = 0.95 + 1.05 * normalized_actions[:, 0]
-        self._processed_actions[:, 1] = 0.5 * normalized_actions[:, 1]
-        self._processed_actions[:, 2] = (torch.pi / 3.0) * normalized_actions[:, 2]
+        # TutorialEnv consumes the bounded Gym action directly as a physical
+        # command; there is no hidden normalization or affine remapping.
+        self._processed_actions[:] = actions
 
     def apply_actions(self) -> None:
         position = self._asset.data.root_pos_w
@@ -69,6 +74,8 @@ class VelocityYawAction(ActionTerm):
         linear_velocity = self._asset.data.root_lin_vel_w
         angular_velocity = self._asset.data.root_ang_vel_w
 
+        # Match TutorialEnv's planar command frame: project body +X into world
+        # XY, normalize it, then construct body +Y as its left-hand normal.
         w, x, y, z = torch.unbind(orientation, dim=-1)
         forward = torch.stack(
             (w * w + x * x - y * y - z * z, 2.0 * (x * y + w * z)),
@@ -112,8 +119,9 @@ class VelocityYawAction(ActionTerm):
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         if env_ids is None:
             env_ids = slice(None)
-        self._raw_actions[env_ids] = 0.0
-        self._processed_actions[env_ids] = 0.0
+        # TutorialEnv retains its last command across an episodic reset. This
+        # keeps both the reset observation's action fields and the first
+        # smoothness penalty of the new episode identical to that baseline.
         self._target_pos_setpoint[env_ids] = self._asset.data.root_pos_w[env_ids]
         orientation = self._asset.data.root_quat_w[env_ids]
         w, x, y, z = torch.unbind(orientation, dim=-1)

@@ -36,6 +36,8 @@ def robot_state(
     robot: Articulation = env.scene[asset_cfg.name]
     default_goal_positions = env.scene.env_origins + torch.tensor([0.0, 0.0, 2.0], device=env.device)
     goal_positions = getattr(env, "goal_positions", default_goal_positions)
+    # Match TutorialEnv exactly: these state vectors use the full inverse body
+    # attitude (roll/pitch/yaw), rather than a yaw-only planar transform.
     relative_goal_body = quat_apply_inverse(robot.data.root_quat_w, goal_positions - robot.data.root_pos_w)
     relative_goal_xy = relative_goal_body[:, :2].clamp(-5.0, 5.0)
     linear_velocity_body = quat_apply_inverse(robot.data.root_quat_w, robot.data.root_lin_vel_w)
@@ -43,7 +45,7 @@ def robot_state(
     return torch.cat(
         (
             relative_goal_xy,
-            env.action_manager.action,
+            env.action_manager.get_term("velocity_yaw").processed_actions,
             linear_velocity_body[:, :2],
             angular_velocity_body[:, 2:3],
         ),

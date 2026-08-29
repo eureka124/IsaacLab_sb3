@@ -19,6 +19,7 @@ from isaaclab.utils import configclass
 
 from tutorial.assets.hummingbird import HUMMINGBIRD_CFG
 
+from ..tutorial.alignment import TUTORIAL_DEPTH_MAX_DISTANCE
 from . import mdp
 from .isolation import CAMERA_MAX_DISTANCE, ENV_SPACING, validate_isolation_settings
 from .layout import (
@@ -162,7 +163,10 @@ class TestObservationsCfg:
     class PolicyCfg(ObsGroup):
         camera = ObsTerm(
             func=mdp.normalized_depth_image,
-            params={"sensor_cfg": SceneEntityCfg("camera"), "max_distance": CAMERA_MAX_DISTANCE},
+            params={
+                "sensor_cfg": SceneEntityCfg("camera"),
+                "max_distance": TUTORIAL_DEPTH_MAX_DISTANCE,
+            },
             clip=(-1.0, 1.0),
         )
         robot_state = ObsTerm(func=mdp.robot_state, params={"asset_cfg": SceneEntityCfg("robot")})
@@ -221,7 +225,7 @@ class TestRewardsCfg:
 
 @configclass
 class TestTerminationsCfg:
-    time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    time_out = DoneTerm(func=mdp.tutorial_time_out, time_out=True)
     collision = DoneTerm(
         func=mdp.collision_termination,
         params={"sensor_cfg": SceneEntityCfg("contact_forces"), "threshold": 1.0},
@@ -268,7 +272,8 @@ class TestMazeEnvCfg(ManagerBasedRLEnvCfg):
         self.episode_length_s = 40.0
         self.sim.dt = 1.0 / 120.0
         self.sim.render_interval = self.decimation
-        self.sim.physx.enable_external_forces_every_iteration = True
+        self.sim.physx.enable_external_forces_every_iteration = False
+        mdp.set_direct_tutorial_reward_weights(self.rewards, self.decimation * self.sim.dt)
         self.viewer.eye = (32.0, 30.0, 28.0)
         self.viewer.lookat = (0.0, 0.0, 1.5)
         validate_isolation_settings(

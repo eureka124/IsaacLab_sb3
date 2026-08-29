@@ -10,8 +10,10 @@ from tutorial.tasks.manager_based.tutorial.mdp.rewards import (
     collision_termination,
     goal_reached,
     goal_reached_termination,
+    set_direct_tutorial_reward_weights,
     velocity_towards_goal,
 )
+from tutorial.tasks.manager_based.tutorial.mdp.terminations import tutorial_time_out
 
 from ...navigation_markers import reset_navigation_markers, update_navigation_markers
 from .events import move_test_obstacles, reset_test_maze
@@ -32,6 +34,8 @@ __all__ = [
     "reset_navigation_markers",
     "reset_test_maze",
     "robot_state",
+    "set_direct_tutorial_reward_weights",
+    "tutorial_time_out",
     "update_navigation_markers",
     "velocity_towards_goal",
 ]

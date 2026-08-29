@@ -206,7 +206,7 @@ class RewardsCfg:
 
 @configclass
 class TerminationsCfg:
-    time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    time_out = DoneTerm(func=mdp.tutorial_time_out, time_out=True)
     collision = DoneTerm(
         func=mdp.collision_termination,
         params={"sensor_cfg": SceneEntityCfg("contact_forces"), "threshold": 1.0},
@@ -237,6 +237,7 @@ class TutorialManagerBasedEnvCfg(ManagerBasedRLEnvCfg):
         self.episode_length_s = 40.0
         self.sim.dt = 1.0 / 120.0
         self.sim.render_interval = self.decimation
-        self.sim.physx.enable_external_forces_every_iteration = True
+        self.sim.physx.enable_external_forces_every_iteration = False
+        mdp.set_direct_tutorial_reward_weights(self.rewards, self.decimation * self.sim.dt)
         self.viewer.eye = (25.0, 25.0, 20.0)
         self.viewer.lookat = (0.0, 0.0, 2.0)

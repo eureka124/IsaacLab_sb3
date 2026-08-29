@@ -6,6 +6,17 @@ from isaaclab.assets import Articulation
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import ContactSensor
 
+from ..alignment import reward_manager_weights
+
+
+def set_direct_tutorial_reward_weights(rewards_cfg, step_dt: float) -> None:
+    """Compensate RewardManager dt scaling to reproduce TutorialEnv rewards."""
+
+    for term_name, manager_weight in reward_manager_weights(step_dt).items():
+        term_cfg = getattr(rewards_cfg, term_name, None)
+        if term_cfg is not None:
+            term_cfg.weight = manager_weight
+
 
 def velocity_towards_goal(env, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     """Reward planar velocity projected towards the current goal."""
@@ -17,9 +28,10 @@ def velocity_towards_goal(env, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot
 
 
 def action_smoothness(env) -> torch.Tensor:
-    """Penalize changes between consecutive policy actions."""
+    """Penalize changes between consecutive physical commands."""
 
-    return torch.norm(env.action_manager.action - env.action_manager.prev_action, dim=-1)
+    action_term = env.action_manager.get_term("velocity_yaw")
+    return torch.norm(action_term.processed_actions - action_term.previous_processed_actions, dim=-1)
 
 
 def goal_reached(
