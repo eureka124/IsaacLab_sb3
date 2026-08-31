@@ -194,6 +194,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     if args_cli.max_iterations is not None:
         agent_cfg["n_timesteps"] = args_cli.max_iterations * agent_cfg["n_steps"] * env_cfg.scene.num_envs
 
+    # Keep the contact-force curriculum aligned with the active training
+    # horizon, including command-line --max_iterations overrides.
+    if hasattr(env_cfg, "contact_force_penalty_max_steps"):
+        env_cfg.contact_force_penalty_max_steps = int(agent_cfg["n_timesteps"])
+
     # set the environment seed
     # note: certain randomizations occur in the environment initialization so we set the seed here
     env_cfg.seed = agent_cfg["seed"]

@@ -206,10 +206,14 @@ class RewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
     action_smoothness = RewTerm(func=mdp.action_smoothness, weight=-0.1)
-    collision = RewTerm(
-        func=mdp.collision_detected,
+    contact_force = RewTerm(
+        func=mdp.contact_force_penalty,
         weight=-200.0,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces"), "threshold": 1.0},
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces"),
+            "saturation_force": 50.0,
+            "ramp_fraction": 0.2,
+        },
     )
     goal_reached = RewTerm(
         func=mdp.goal_reached,
@@ -223,7 +227,7 @@ class TerminationsCfg:
     time_out = DoneTerm(func=mdp.tutorial_time_out, time_out=True)
     collision = DoneTerm(
         func=mdp.collision_termination,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces"), "threshold": 1.0},
+        params={"sensor_cfg": SceneEntityCfg("contact_forces"), "threshold": 50.0},
     )
     goal_reached = DoneTerm(
         func=mdp.goal_reached_termination,
@@ -238,6 +242,10 @@ class TerminationsCfg:
 @configclass
 class TrainingMazesEnvCfg(ManagerBasedRLEnvCfg):
     """Six-maze training task with a runtime-configurable number of drones."""
+
+    # Aggregate transitions across all parallel environments. Training scripts
+    # overwrite this from the active agent configuration.
+    contact_force_penalty_max_steps: int = 70_000_000
 
     # Save one bundle/preview per maze type (six files of each kind), never per cloned drone.
     save_global_toa_maps: bool = True

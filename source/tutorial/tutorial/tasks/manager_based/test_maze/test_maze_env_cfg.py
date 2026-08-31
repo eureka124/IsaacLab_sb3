@@ -211,10 +211,14 @@ class TestRewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
     action_smoothness = RewTerm(func=mdp.action_smoothness, weight=-0.1)
-    collision = RewTerm(
-        func=mdp.collision_detected,
+    contact_force = RewTerm(
+        func=mdp.contact_force_penalty,
         weight=-200.0,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces"), "threshold": 1.0},
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces"),
+            "saturation_force": 50.0,
+            "ramp_fraction": 0.2,
+        },
     )
     goal_reached = RewTerm(
         func=mdp.goal_reached,
@@ -228,7 +232,7 @@ class TestTerminationsCfg:
     time_out = DoneTerm(func=mdp.tutorial_time_out, time_out=True)
     collision = DoneTerm(
         func=mdp.collision_termination,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces"), "threshold": 1.0},
+        params={"sensor_cfg": SceneEntityCfg("contact_forces"), "threshold": 50.0},
     )
     goal_reached = DoneTerm(
         func=mdp.goal_reached_termination,
@@ -243,6 +247,10 @@ class TestTerminationsCfg:
 @configclass
 class TestMazeEnvCfg(ManagerBasedRLEnvCfg):
     """Unseen mixed maze with two routes and two moving obstacles."""
+
+    # Aggregate transitions across all parallel environments. Training scripts
+    # overwrite this from the active agent configuration.
+    contact_force_penalty_max_steps: int = 70_000_000
 
     save_global_toa_maps: bool = True
     toa_map_output_dir: str = "outputs/test_maze_toa"

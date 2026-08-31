@@ -145,7 +145,6 @@ class TutorialEnv(DirectRLEnv):
 
         # Collect obstacles from scene
         self.obstacles = []
-        self.obstacle_radii = []
         self.num_obstacles = len(obstacle_positions)
         missing_obstacles = []
         for i in range(self.num_obstacles):
@@ -155,18 +154,9 @@ class TutorialEnv(DirectRLEnv):
                 continue
             obs = self.scene[name]
             self.obstacles.append(obs)
-            self.obstacle_radii.append(float(obs.cfg.spawn.radius))
 
         if missing_obstacles:
-            raise RuntimeError(
-                "Scene obstacle configuration is out of sync with obstacle_positions; "
-                f"missing: {', '.join(missing_obstacles)}"
-            )
-
-        if self.obstacles:
-            self.obstacle_radii_tensor = torch.tensor(self.obstacle_radii, device=self.device)
-        else:
-            self.obstacle_radii_tensor = torch.zeros((0,), device=self.device)
+            raise RuntimeError("Scene obstacle configuration is out of sync with obstacle_positions; " f"missing: {', '.join(missing_obstacles)}")
 
         # Scene extras create their XFormPrim view before environment cloning, so
         # rebuild each view here to include every cloned environment instance.
@@ -177,14 +167,9 @@ class TutorialEnv(DirectRLEnv):
             )
             for i in range(NUM_U_OBSTACLES)
         ]
-        invalid_u_obstacle_views = [
-            index for index, obstacle in enumerate(self.u_obstacles) if obstacle.count != self.num_envs
-        ]
+        invalid_u_obstacle_views = [index for index, obstacle in enumerate(self.u_obstacles) if obstacle.count != self.num_envs]
         if invalid_u_obstacle_views:
-            raise RuntimeError(
-                "U obstacle views do not cover every environment: "
-                f"{invalid_u_obstacle_views}; expected {self.num_envs} prims per view."
-            )
+            raise RuntimeError("U obstacle views do not cover every environment: " f"{invalid_u_obstacle_views}; expected {self.num_envs} prims per view.")
         initial_u_yaws = torch.tensor(u_obstacle_yaws, dtype=torch.float32, device=self.device)
         self.u_obstacle_yaws = initial_u_yaws.unsqueeze(0).repeat(self.num_envs, 1)
 
@@ -298,9 +283,7 @@ class TutorialEnv(DirectRLEnv):
             self.device,
         )
 
-    def _build_robot_aligned_toa_map(
-        self, env_ids: torch.Tensor | None = None, crop_size: int | None = None
-    ) -> torch.Tensor:
+    def _build_robot_aligned_toa_map(self, env_ids: torch.Tensor | None = None, crop_size: int | None = None) -> torch.Tensor:
         """Build TOA maps aligned with each robot's body frame.
 
         The returned map is centered on the robot and rotated by its yaw so the
@@ -317,17 +300,11 @@ class TutorialEnv(DirectRLEnv):
 
         # 使用提前缓存好的局部采样网格，避免每步重复 linspace / meshgrid / stack
         if crop_size != self.toa_crop_size_cached:
-            raise ValueError(
-                f"Cached TOA crop grid has size {self.toa_crop_size_cached}, "
-                f"but requested crop_size={crop_size}. "
-                "Please rebuild the crop grid or use self.critic_toa_crop_size."
-            )
+            raise ValueError(f"Cached TOA crop grid has size {self.toa_crop_size_cached}, " f"but requested crop_size={crop_size}. " "Please rebuild the crop grid or use self.critic_toa_crop_size.")
 
         grid_local = self.toa_crop_grid_local
 
-        robot_pos_local = (self.robot.data.root_pos_w[env_ids, :2] - self.scene.env_origins[env_ids, :2]).to(
-            device=device, dtype=dtype
-        )
+        robot_pos_local = (self.robot.data.root_pos_w[env_ids, :2] - self.scene.env_origins[env_ids, :2]).to(device=device, dtype=dtype)
 
         q = self.robot.data.root_quat_w[env_ids].to(device=device, dtype=dtype)
         w, x, y, z = torch.unbind(q, dim=-1)
@@ -362,14 +339,10 @@ class TutorialEnv(DirectRLEnv):
         sampled = sampled * 2.0 - 1.0
         return sampled
 
-    def _save_robot_aligned_toa_map(
-        self, env_id: int = 0, save_path: str | None = None, crop_size: int | None = None
-    ) -> str:
+    def _save_robot_aligned_toa_map(self, env_id: int = 0, save_path: str | None = None, crop_size: int | None = None) -> str:
         """Save the robot-aligned TOA map for one environment as an image."""
         if save_path is None:
-            save_path = os.path.join(
-                self.toa_output_dir, f"toa_aligned_env_{env_id:03d}_step_{self.step_count:06d}.png"
-            )
+            save_path = os.path.join(self.toa_output_dir, f"toa_aligned_env_{env_id:03d}_step_{self.step_count:06d}.png")
 
         toa_map = self._build_robot_aligned_toa_map(
             env_ids=torch.tensor([env_id], device=self.device),
@@ -409,31 +382,12 @@ class TutorialEnv(DirectRLEnv):
 
         # Obstacles are randomized at reset, so rebuild TOA maps from current obstacle states.
         for env_id in env_ids.tolist():
-            target_local = (
-                (self.target_pos[env_id, :2] - self.scene.env_origins[env_id, :2])
-                .detach()
-                .cpu()
-                .numpy()
-                .astype(np.float32)
-            )
+            target_local = (self.target_pos[env_id, :2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy().astype(np.float32)
 
             env_obstacles = list(maze_obstacles)
             env_u_yaws = self.u_obstacle_yaws[env_id].detach().cpu().tolist()
             for position, yaw in zip(u_obstacle_positions, env_u_yaws):
                 env_obstacles.extend(create_u_obstacle_toa_rects(position, yaw))
-            # for k, obs in enumerate(self.obstacles):
-            #     obs_pos_w = obs.data.root_pos_w[env_id]
-            #     # Some reset modes disable an obstacle by moving it below the floor.
-            #     if obs_pos_w[2].item() < 0.0:
-            #         continue
-
-            #     center_local = (obs_pos_w[:2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy()
-            #     env_obstacles.append(
-            #         TOA.circle_obstacle_to_rect(
-            #             center_xy=(float(center_local[0]), float(center_local[1])),
-            #             radius=self.obstacle_radii[k],
-            #         )
-            #     )
 
             toa_map = TOA.build_toa_map(
                 goal_xy=target_local,
@@ -551,9 +505,7 @@ class TutorialEnv(DirectRLEnv):
         dx = float(self.toa_grid_xs[1] - self.toa_grid_xs[0])
         half_extent = (crop_size / 2.0) * dx
 
-        robot_pos_local = (
-            (self.robot.data.root_pos_w[env_id, :2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy()
-        )
+        robot_pos_local = (self.robot.data.root_pos_w[env_id, :2] - self.scene.env_origins[env_id, :2]).detach().cpu().numpy()
 
         quat = self.robot.data.root_quat_w[env_id].detach().cpu()
         w, x, y, z = quat.tolist()
@@ -666,7 +618,7 @@ class TutorialEnv(DirectRLEnv):
             obs_xy = (obs_pos_w[:2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
             circle = Circle(
                 (float(obs_xy[0]), float(obs_xy[1])),
-                float(self.obstacle_radii[k]),
+                float(obs.cfg.spawn.radius),
                 linewidth=1,
                 edgecolor="black",
                 facecolor="gray",
@@ -816,7 +768,7 @@ class TutorialEnv(DirectRLEnv):
             obs_xy = (obs_pos_w[:2] - self.scene.env_origins[0, :2]).detach().cpu().numpy()
             circle = Circle(
                 (float(obs_xy[0]), float(obs_xy[1])),
-                float(self.obstacle_radii[k]),
+                float(obs.cfg.spawn.radius),
                 linewidth=1,
                 edgecolor="black",
                 facecolor="gray",
@@ -995,9 +947,7 @@ class TutorialEnv(DirectRLEnv):
         robot_quat = self.robot.data.root_quat_w
         diff_global = self.target_pos - robot_pos
         diff_body = quat_rotate_inverse(robot_quat, diff_global)
-        relative_position = diff_body[:, :2].clamp(
-            -5.0, 5.0
-        )  # 目标位置相对于机器人的位置差 (num_envs, 2)，并裁剪到合理范围
+        relative_position = diff_body[:, :2].clamp(-5.0, 5.0)  # 目标位置相对于机器人的位置差 (num_envs, 2)，并裁剪到合理范围
 
         last_action = self.actions
 
@@ -1012,52 +962,6 @@ class TutorialEnv(DirectRLEnv):
         yaw_rate = ang_vel_b[:, 2:3]
 
         obs = torch.cat((relative_position, last_action, vel_xy, yaw_rate), dim=-1)  # shape: (num_envs, 8)
-
-        # Calculate privileged information (nearest 5 obstacles)
-        def get_nearest_obstacle_features():
-            if len(self.obstacles) > 0:
-                # 1. Gather all obstacle positions: (num_envs, num_obstacles, 3)
-                all_obs_pos_w = torch.stack([obs.data.root_pos_w for obs in self.obstacles], dim=1)
-                # 2. Robot position: (num_envs, 1, 3)
-                robot_pos_w = self.robot.data.root_pos_w.unsqueeze(1)
-                # 3. Relative positions in world frame
-                rel_pos_w = all_obs_pos_w - robot_pos_w
-                # 4. Filter by distance (XY plane)
-                dists = torch.norm(rel_pos_w[..., :2], dim=-1)
-                # 5. Get 5 nearest
-                k = min(5, len(self.obstacles))
-                vals, indices = torch.topk(dists, k=k, largest=False)
-
-                # 6. Gather geometric features
-                # Create batch indices for gathering
-                batch_indices = torch.arange(self.num_envs, device=self.device).unsqueeze(1).expand(-1, k)
-                # Gather relative positions: (num_envs, k, 3)
-                selected_rel_pos_w = rel_pos_w[batch_indices, indices]
-
-                # Rotate to body frame (consistent with other obs)
-                # Flatten to vector-process rotation
-                flat_rel_pos_w = selected_rel_pos_w.reshape(-1, 3)
-                flat_quats = self.robot.data.root_quat_w.repeat_interleave(k, dim=0)
-                flat_rel_pos_b = quat_rotate_inverse(flat_quats, flat_rel_pos_w)
-                selected_rel_pos_b = flat_rel_pos_b.reshape(self.num_envs, k, 3)
-
-                # Extract XY: (num_envs, k, 2)
-                feat_xy = selected_rel_pos_b[..., :2]
-
-                # Gather radii: (num_envs, k)
-                selected_radii = self.obstacle_radii_tensor[indices]
-
-                # Combine: (num_envs, k, 3) -> [x, y, r]
-                critic_obs = torch.cat([feat_xy, selected_radii.unsqueeze(-1)], dim=-1)
-                # Flatten: (num_envs, k*3)
-                critic_obs = critic_obs.reshape(self.num_envs, -1)
-
-                # Pad if less than 5
-                if k < 5:
-                    padding = torch.zeros((self.num_envs, (5 - k) * 3), device=self.device)
-                    critic_obs = torch.cat([critic_obs, padding], dim=-1)
-            else:
-                critic_obs = torch.zeros((self.num_envs, 15), device=self.device)
 
         observations = {
             "policy": {
@@ -1077,9 +981,7 @@ class TutorialEnv(DirectRLEnv):
         target_pos = self.target_pos[:, :2]  # 目标位置 (num_envs, 2)
         robot_pos = self.robot.data.root_pos_w[:, :2]  # 机器人位置 (num_envs, 2)
         direction_vector = target_pos - robot_pos  # 目标点相对机器人的位置 (num_envs, 2)
-        direction_vector = direction_vector / (
-            torch.norm(direction_vector, dim=-1, keepdim=True) + 1e-6
-        )  # 归一化方向向量 (num_envs, 2)
+        direction_vector = direction_vector / (torch.norm(direction_vector, dim=-1, keepdim=True) + 1e-6)  # 归一化方向向量 (num_envs, 2)
         linear_velocity = self.robot.data.root_lin_vel_w[:, :2]  # 线速度 (num_envs, 2) [vx, vy]
         reward_velocity = torch.sum(linear_velocity * direction_vector, dim=1)  # 速度奖励 (num_envs,)
 
@@ -1089,28 +991,6 @@ class TutorialEnv(DirectRLEnv):
         action_diff = self.actions - self.prev_actions  # 动作变化 (num_envs    , 2)
         penalty_smooth = torch.norm(action_diff, p=2, dim=1)  # 平滑惩罚 (num_envs,)
         self.prev_actions = self.actions.clone()  # 更新前一动作
-
-        # 计算障碍物距离惩罚
-        if len(self.obstacles) > 0:
-            obstacle_pos = torch.stack(
-                [obs.data.root_pos_w[:, :2] for obs in self.obstacles], dim=0
-            )  # (num_obstacles, num_envs, 2)
-            # 计算机器人到障碍物中心的距离
-            # robot_pos: (num_envs, 2) -> unsqueeze(0) -> (1, num_envs, 2)
-            dists = torch.norm(obstacle_pos - robot_pos.unsqueeze(0), dim=-1)  # (num_obstacles, num_envs)
-
-            # 计算到障碍物表面的距离: 中心距离 - 障碍物半径
-            # self.obstacle_radii_tensor: (num_obstacles,) -> unsqueeze(1) -> (num_obstacles, 1)
-            dist_to_surface = dists - self.obstacle_radii_tensor.unsqueeze(1)
-
-            # 找到最近的障碍物距离 (num_envs,)
-            min_dist_to_surface, _ = torch.min(dist_to_surface, dim=0)
-
-            # 计算惩罚: 距离1m时惩罚为0, 距离0.4m时惩罚为3. 0.4m到1m之间线性变化 (P = 4 * (0.8 - d))
-            # clamp min=0 确保距离大于1m时无惩罚
-            obstacle_penalty = torch.clamp(4.0 * (0.8 - min_dist_to_surface), min=0.0)
-        else:
-            obstacle_penalty = torch.zeros(self.num_envs, device=self.device)
 
         current_toa = self._sample_toa_from_maps(
             self.toa_maps,
@@ -1135,17 +1015,18 @@ class TutorialEnv(DirectRLEnv):
         yaw_diff = torch.acos(dot)
         yaw_penalty = yaw_diff * (desired_norm.squeeze(-1) > 1e-5).float()
 
+        contact_force_penalty = self._get_contact_force_penalty()
+
         # print("Penalty Smooth:", penalty_smooth)
         # print("Reward Velocity:", reward_velocity)
-        # print("Collided:", self.collided)
+        # print("Contact Force Penalty:", contact_force_penalty)
         # print("Arrived:", self.arrived)
         total_reward = compute_rewards(
             reward_velocity,
             reward_toa,
-            self.collided,
+            contact_force_penalty,
             penalty_smooth,
             self.arrived,
-            obstacle_penalty,
             yaw_penalty,
         )  # print(self.robot.data)
 
@@ -1165,12 +1046,10 @@ class TutorialEnv(DirectRLEnv):
                 print("NaN detected in penalty_smooth")
                 print("actions:", self.actions)
                 print("prev_actions:", self.prev_actions)
-            if torch.isnan(self.collided.float()).any():
-                print("NaN detected in collided")
+            if torch.isnan(contact_force_penalty).any():
+                print("NaN detected in contact_force_penalty")
             if torch.isnan(self.arrived.float()).any():
                 print("NaN detected in arrived")
-            if torch.isnan(obstacle_penalty).any():
-                print("NaN detected in obstacle_penalty")
             raise RuntimeError("total_reward contains NaN values, interrupting program")
 
         return total_reward
@@ -1192,12 +1071,7 @@ class TutorialEnv(DirectRLEnv):
         self.arrived = arrived
 
         # 2. 判断是否碰撞 (使用接触力传感器)
-        # 获取接触力，传感器名称在 SceneCfg 中定义为 "contact_forces"
-        # data.net_forces_w shape: (num_envs, num_bodies, 3)
-        contact_forces = self.scene["contact_forces"].data.net_forces_w
-        # 计算接触力的模长，如果大于某个阈值 (例如 1.0N) 则认为发生碰撞
-        # 排除与地面的正常接触 (如果在起飞前有接触，或者这里只关注大于一定阈值的力)
-        collided = torch.any(torch.norm(contact_forces, dim=-1) > 1.0, dim=1)
+        collided = self._get_contact_collision()
         self.collided = collided
         # 3. 统计信息 (确保在 __init__ 中初始化了这些变量)
         num_resets = time_out.sum().item() + collided.sum().item() + arrived.sum().item()
@@ -1211,10 +1085,7 @@ class TutorialEnv(DirectRLEnv):
         if current_sum > 0 and current_sum % 1000 == 0:
             if not self.last_condition_state:  # 防止同一步重复打印
                 success_rates = self.success_rate_count / self.success_rate_count.sum().item() * 100
-                print(
-                    f"Stats [Timeout, Collision, Arrived]: [{success_rates[0]:.2f}%, {success_rates[1]:.2f}%,"
-                    f" {success_rates[2]:.2f}%, total episodes: {self.success_rate_count.sum().item()}]"
-                )
+                print(f"Stats [Timeout, Collision, Arrived]: [{success_rates[0]:.2f}%, {success_rates[1]:.2f}%," f" {success_rates[2]:.2f}%, total episodes: {self.success_rate_count.sum().item()}]")
                 self.last_condition_state = True
                 self.success_rate_count[:] = 0
         else:
@@ -1229,6 +1100,33 @@ class TutorialEnv(DirectRLEnv):
         self.extras["time_out"] = time_out
 
         return reset_envs, time_out
+
+    def _get_contact_collision(self, threshold: float = 50.0) -> torch.Tensor:
+        """Return one for envs whose monitored robot bodies reach the contact-force threshold."""
+
+        contact_forces = self.scene["contact_forces"].data.net_forces_w
+        return torch.any(torch.norm(contact_forces, dim=-1) >= threshold, dim=1)
+
+    def _get_contact_force_penalty(self) -> torch.Tensor:
+        """Return the scheduled, force-proportional contact penalty scale."""
+
+        saturation_force = float(self.cfg.contact_force_penalty_saturation_force)
+        ramp_fraction = float(self.cfg.contact_force_penalty_ramp_fraction)
+        max_training_steps = int(self.cfg.contact_force_penalty_max_steps)
+        if saturation_force <= 0.0:
+            raise ValueError(f"contact_force_penalty_saturation_force must be positive, got {saturation_force}")
+        if not 0.0 < ramp_fraction <= 1.0:
+            raise ValueError(f"contact_force_penalty_ramp_fraction must be in (0, 1], got {ramp_fraction}")
+        if max_training_steps <= 0:
+            raise ValueError(f"contact_force_penalty_max_steps must be positive, got {max_training_steps}")
+
+        contact_forces = self.scene["contact_forces"].data.net_forces_w
+        max_contact_force = torch.norm(contact_forces, dim=-1).amax(dim=1)
+        force_scale = (max_contact_force / saturation_force).clamp(max=1.0)
+
+        elapsed_steps = float(self.common_step_counter * self.num_envs)
+        curriculum_scale = min(elapsed_steps / (max_training_steps * ramp_fraction), 1.0)
+        return force_scale * curriculum_scale
 
     def _reset_idx(self, env_ids):
         if env_ids is None:
@@ -1261,10 +1159,7 @@ class TutorialEnv(DirectRLEnv):
         # Grid Logic
         num_grid_cells = self.grid_size**2
         if self.num_obstacles + 2 > num_grid_cells:
-            raise RuntimeError(
-                f"{self.num_obstacles} obstacles do not fit in a {self.grid_size}x{self.grid_size} grid "
-                "while reserving start and goal cells."
-            )
+            raise RuntimeError(f"{self.num_obstacles} obstacles do not fit in a {self.grid_size}x{self.grid_size} grid " "while reserving start and goal cells.")
         rand_vals = torch.rand((len_env_ids, num_grid_cells), device=self.device)
         perm = torch.argsort(rand_vals, dim=1)
 
@@ -1285,7 +1180,7 @@ class TutorialEnv(DirectRLEnv):
             for k in range(len(self.obstacles)):
                 grid_idx = obs_grid_indices[:, k]
                 cx, cy = get_grid_coords_batch(grid_idx)
-                r = self.obstacle_radii_tensor[k]
+                r = float(self.obstacles[k].cfg.spawn.radius)
 
                 max_offset = (self.cell_size / 2.0) - r
                 max_offset = torch.clamp(max_offset, min=0.0)
@@ -1346,9 +1241,7 @@ class TutorialEnv(DirectRLEnv):
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         # 从归一化后的四元数提取 yaw
         w, x, y, z = torch.unbind(target_quat, dim=-1)
-        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(
-            -1
-        )
+        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(-1)
 
     def _fixed_reset_positions(self, env_ids):
         """保持障碍物在原始位置，无人机位于原点，目标点在边界随机采样。"""
@@ -1413,9 +1306,7 @@ class TutorialEnv(DirectRLEnv):
         # 5. 初始化控制器状态
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         w, x, y, z = torch.unbind(target_quat, dim=-1)
-        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(
-            -1
-        )
+        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(-1)
 
     def _corner_diagonal_reset_positions(self, env_ids):
         """障碍物随机网格重置；无人机起点为四角之一，目标为对角角点。"""
@@ -1427,9 +1318,7 @@ class TutorialEnv(DirectRLEnv):
         # 1. 障碍物重置方式与 _randomize_grid_positions 一致
         num_grid_cells = self.grid_size**2
         if self.num_obstacles > num_grid_cells:
-            raise RuntimeError(
-                f"{self.num_obstacles} obstacles do not fit in a {self.grid_size}x{self.grid_size} grid."
-            )
+            raise RuntimeError(f"{self.num_obstacles} obstacles do not fit in a {self.grid_size}x{self.grid_size} grid.")
         rand_vals = torch.rand((len_env_ids, num_grid_cells), device=self.device)
         perm = torch.argsort(rand_vals, dim=1)
         obs_grid_indices = perm[:, : self.num_obstacles]
@@ -1445,7 +1334,7 @@ class TutorialEnv(DirectRLEnv):
             for k in range(len(self.obstacles)):
                 grid_idx = obs_grid_indices[:, k]
                 cx, cy = get_grid_coords_batch(grid_idx)
-                r = self.obstacle_radii_tensor[k]
+                r = float(self.obstacles[k].cfg.spawn.radius)
 
                 max_offset = (self.cell_size / 2.0) - r
                 max_offset = torch.clamp(max_offset, min=0.0)
@@ -1499,9 +1388,7 @@ class TutorialEnv(DirectRLEnv):
 
         self.target_pos_setpoint[env_ids] = default_root_state[:, :3]
         w, x, y, z = torch.unbind(target_quat, dim=-1)
-        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(
-            -1
-        )
+        self.target_yaw_setpoint[env_ids] = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).unsqueeze(-1)
 
     def _save_depth_debug_frames(
         self,
@@ -1682,26 +1569,23 @@ class DepthImageBuffer:
 def compute_rewards(
     reward_velocity: torch.Tensor,
     reward_toa: torch.Tensor,
-    collided: torch.Tensor,
+    contact_force_penalty: torch.Tensor,
     penalty_smooth: torch.Tensor,
     arrived: torch.Tensor,
-    penalty_obstacle: torch.Tensor,
     penalty_yaw: torch.Tensor,
 ):
     # total_reward = reward_toa * 10.0
     # total_reward = total_reward - penalty_yaw * 1.0
     total_reward = reward_velocity * 0.5
-    # total_reward = total_reward - penalty_obstacle
     total_reward = total_reward - penalty_smooth * 0.1
-    total_reward = total_reward - collided * 200.0
+    total_reward = total_reward - contact_force_penalty * 200.0
     total_reward = total_reward + arrived * 300.0
 
     # print("Reward Velocity:", reward_velocity)
     # print("Reward TOA:", reward_toa)
     # print("Penalty Smooth:", penalty_smooth)
-    # print("Collided:", collided)
+    # print("Contact Force Penalty:", contact_force_penalty)
     # print("Arrived:", arrived)
-    # print("Penalty Obstacle:", penalty_obstacle)
     # print("Penalty Yaw:", penalty_yaw)
     return total_reward  # 返回 (num_envs,) 以匹配 SB3 预期
 

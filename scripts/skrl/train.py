@@ -189,6 +189,12 @@ def main(
         agent_cfg["trainer"]["timesteps"] = (
             args_cli.max_iterations * agent_cfg["agent"]["rollouts"]
         )
+    # skrl counts vector-environment steps, while the reward curriculum stores
+    # aggregate transitions across all parallel environments.
+    if hasattr(env_cfg, "contact_force_penalty_max_steps"):
+        env_cfg.contact_force_penalty_max_steps = int(
+            agent_cfg["trainer"]["timesteps"] * env_cfg.scene.num_envs
+        )
     agent_cfg["trainer"]["close_environment_at_exit"] = False
     agent_cfg["trainer"]["disable_progressbar"] = True
     # configure the ML framework into the global skrl variable

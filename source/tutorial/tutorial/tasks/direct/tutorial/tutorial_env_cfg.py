@@ -286,6 +286,10 @@ class TutorialEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 5  # 5个dt进行一次决策
     episode_length_s = 40  # 导航任务最长时间40s
+    # 所有并行环境的总训练步数；训练脚本会用当前 agent 配置覆盖该值。
+    contact_force_penalty_max_steps: int = 70_000_000
+    contact_force_penalty_saturation_force: float = 50.0
+    contact_force_penalty_ramp_fraction: float = 0.2
     # critic TOA crop size (pixels)
     critic_toa_crop_size: int = 16
 

@@ -16,7 +16,7 @@ TUTORIAL_TOA_CROP_GRID_SPACING = 30.0 / 200.0
 TUTORIAL_REWARD_WEIGHTS = {
     "goal_velocity": 0.5,
     "action_smoothness": -0.1,
-    "collision": -200.0,
+    "contact_force": -200.0,
     "goal_reached": 300.0,
 }
 
