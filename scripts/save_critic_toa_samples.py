@@ -23,6 +23,8 @@ parser = argparse.ArgumentParser(description="Save critic TOA samples.")
 parser.add_argument("--num_envs", type=int, default=4, help="Number of environments.")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
+# Keep Kit's verbose Info messages in its log file while showing warnings and errors in the terminal.
+args.kit_args = f'--/log/outputStreamLevel=Warning {args.kit_args or ""}'.strip()
 
 # initialize app
 app_launcher = AppLauncher(args)

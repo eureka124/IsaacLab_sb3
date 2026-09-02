@@ -88,6 +88,8 @@ parser.add_argument(
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
 args_cli, hydra_args = parser.parse_known_args()
+# Keep Kit's verbose Info messages in its log file while showing warnings and errors in the terminal.
+args_cli.kit_args = f'--/log/outputStreamLevel=Warning {args_cli.kit_args or ""}'.strip()
 
 # always enable cameras to record video
 if args_cli.video:

@@ -17,8 +17,8 @@ with `Isaac` in their name.
 
 from isaaclab.app import AppLauncher
 
-# launch omniverse app
-app_launcher = AppLauncher(headless=True)
+# launch omniverse app; keep verbose Kit messages out of the terminal
+app_launcher = AppLauncher(headless=True, kit_args="--/log/outputStreamLevel=Warning")
 simulation_app = app_launcher.app
 
 

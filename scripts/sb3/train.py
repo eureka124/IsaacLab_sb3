@@ -46,7 +46,7 @@ parser.add_argument(
     help="Name of the RL agent configuration entry point.",
 )
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
-parser.add_argument("--log_interval", type=int, default=5000, help="Log data every n timesteps.")
+parser.add_argument("--log_interval", type=int, default=500000, help="Log data every n timesteps.")
 parser.add_argument(
     "--checkpoint_interval",
     type=int,
@@ -93,6 +93,8 @@ parser.add_argument(
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
 args_cli, hydra_args = parser.parse_known_args()
+# Keep Kit's verbose Info messages in its log file while showing warnings and errors in the terminal.
+args_cli.kit_args = f'--/log/outputStreamLevel=Warning {args_cli.kit_args or ""}'.strip()
 # always enable cameras to record video
 if args_cli.video:
     args_cli.enable_cameras = True
