@@ -6,17 +6,7 @@ from ..tutorial import agents
 
 
 gym.register(
-    id="Template-Training-Mazes-ManagerBased-1024-v0",
-    entry_point=f"{__name__}.training_mazes_env:TrainingMazesEnv",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": f"{__name__}.training_mazes_env_cfg:TrainingMazesEnvCfg",
-        "sb3_cfg_entry_point": f"{agents.__name__}:sb3_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
-    id="Template-Training-Mazes-ManagerBased-2048-v0",
+    id="Training-Mazes-v0",
     entry_point=f"{__name__}.training_mazes_env:TrainingMazesEnv",
     disable_env_checker=True,
     kwargs={

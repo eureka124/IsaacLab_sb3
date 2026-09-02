@@ -1,4 +1,4 @@
-"""Manager-based 1024/2048-drone environment for the six training mazes."""
+"""Manager-based multi-drone environment for the six training mazes."""
 
 from __future__ import annotations
 
