@@ -20,6 +20,7 @@ from ...navigation_markers import reset_navigation_markers, update_navigation_ma
 from .events import reset_training_maze
 from .terminations import outside_isolated_arena
 from .toa_observations import privileged_toa_map
+from .toa_rewards import toa_progress
 
 __all__ = [
     "VelocityYawActionCfg",
@@ -37,6 +38,7 @@ __all__ = [
     "robot_state",
     "set_direct_tutorial_reward_weights",
     "tutorial_time_out",
+    "toa_progress",
     "update_navigation_markers",
     "velocity_towards_goal",
 ]

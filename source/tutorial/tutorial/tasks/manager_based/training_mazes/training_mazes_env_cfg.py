@@ -29,6 +29,15 @@ from .layouts import (
 )
 
 
+# Per-policy-step weights. ``set_direct_tutorial_reward_weights`` compensates
+# for RewardManager's automatic multiplication by the policy step duration.
+TRAINING_MAZE_REWARD_WEIGHTS = {
+    "goal_velocity": 0.1,
+    "toa_progress": 5.0,
+    "contact_force": -100.0,
+}
+
+
 def _fixed_cuboid(size: tuple[float, float, float]) -> sim_utils.CuboidCfg:
     return sim_utils.CuboidCfg(
         size=size,
@@ -202,17 +211,27 @@ class EventCfg:
 class RewardsCfg:
     goal_velocity = RewTerm(
         func=mdp.velocity_towards_goal,
-        weight=0.5,
+        weight=TRAINING_MAZE_REWARD_WEIGHTS["goal_velocity"],
         params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+    toa_progress = RewTerm(
+        func=mdp.toa_progress,
+        weight=TRAINING_MAZE_REWARD_WEIGHTS["toa_progress"],
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "scale": 1.0,
+            "clip": 0.25,
+        },
     )
     action_smoothness = RewTerm(func=mdp.action_smoothness, weight=-0.1)
     contact_force = RewTerm(
         func=mdp.contact_force_penalty,
-        weight=-200.0,
+        weight=TRAINING_MAZE_REWARD_WEIGHTS["contact_force"],
         params={
             "sensor_cfg": SceneEntityCfg("contact_forces"),
             "saturation_force": 50.0,
-            "ramp_fraction": 0.2,
+            # Reach full strength at 40% of the active training horizon.
+            "ramp_fraction": 0.4,
         },
     )
     goal_reached = RewTerm(
@@ -277,7 +296,11 @@ class TrainingMazesEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1.0 / 120.0
         self.sim.render_interval = self.decimation
         self.sim.physx.enable_external_forces_every_iteration = False
-        mdp.set_direct_tutorial_reward_weights(self.rewards, self.decimation * self.sim.dt)
+        mdp.set_direct_tutorial_reward_weights(
+            self.rewards,
+            self.decimation * self.sim.dt,
+            overrides=TRAINING_MAZE_REWARD_WEIGHTS,
+        )
         self.viewer.eye = (28.0, 28.0, 24.0)
         self.viewer.lookat = (0.0, 0.0, 1.5)
         validate_isolation_settings(self.scene.env_spacing, CAMERA_MAX_DISTANCE, DRONE_XY_LIMIT)

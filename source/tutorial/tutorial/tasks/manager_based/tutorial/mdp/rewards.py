@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import torch
 
 from isaaclab.assets import Articulation
@@ -9,10 +11,14 @@ from isaaclab.sensors import ContactSensor
 from ..alignment import reward_manager_weights
 
 
-def set_direct_tutorial_reward_weights(rewards_cfg, step_dt: float) -> None:
-    """Compensate RewardManager dt scaling to reproduce TutorialEnv rewards."""
+def set_direct_tutorial_reward_weights(
+    rewards_cfg,
+    step_dt: float,
+    overrides: Mapping[str, float] | None = None,
+) -> None:
+    """Compensate RewardManager dt scaling, with optional task-specific weights."""
 
-    for term_name, manager_weight in reward_manager_weights(step_dt).items():
+    for term_name, manager_weight in reward_manager_weights(step_dt, overrides).items():
         term_cfg = getattr(rewards_cfg, term_name, None)
         if term_cfg is not None:
             term_cfg.weight = manager_weight

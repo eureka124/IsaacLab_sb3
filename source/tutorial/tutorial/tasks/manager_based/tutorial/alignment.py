@@ -7,6 +7,7 @@ and reward code cannot silently drift to different scales.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 
 
 TUTORIAL_ACTION_LOW = (-0.1, -0.5, -math.pi / 3.0)
@@ -21,9 +22,15 @@ TUTORIAL_REWARD_WEIGHTS = {
 }
 
 
-def reward_manager_weights(step_dt: float) -> dict[str, float]:
-    """Return weights that undo RewardManager's automatic ``step_dt`` factor."""
+def reward_manager_weights(
+    step_dt: float,
+    overrides: Mapping[str, float] | None = None,
+) -> dict[str, float]:
+    """Return direct-style weights, optionally overridden for a specific task."""
 
     if step_dt <= 0.0:
         raise ValueError(f"step_dt must be positive, got {step_dt}")
-    return {name: weight / step_dt for name, weight in TUTORIAL_REWARD_WEIGHTS.items()}
+    direct_weights = dict(TUTORIAL_REWARD_WEIGHTS)
+    if overrides is not None:
+        direct_weights.update(overrides)
+    return {name: weight / step_dt for name, weight in direct_weights.items()}
