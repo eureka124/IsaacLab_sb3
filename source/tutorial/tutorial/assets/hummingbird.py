@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
@@ -25,12 +25,21 @@ from isaaclab.assets import ArticulationCfg
 # Configuration
 ##
 
+HUMMINGBIRD_USD_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "thirdparty"
+    / "OmniDrones"
+    / "omni_drones"
+    / "robots"
+    / "assets"
+    / "usd"
+    / "hummingbird.usd"
+)
+
 HUMMINGBIRD_CFG = ArticulationCfg(
     prim_path="{ENV_REGEX_NS}/Robot",
     spawn=sim_utils.UsdFileCfg(
-        usd_path=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "hummingbird/hummingbird.usd")
-        ),
+        usd_path=str(HUMMINGBIRD_USD_PATH),
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,

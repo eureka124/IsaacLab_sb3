@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from isaaclab.assets import Articulation
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.sensors import TiledCamera
+from isaaclab.sensors import MultiMeshRayCasterCamera, TiledCamera
 from isaaclab.utils.math import quat_apply_inverse
 
 
@@ -16,7 +16,7 @@ def normalized_depth_image(
 ) -> torch.Tensor:
     """Return pooled depth images in NCHW format normalized to ``[-1, 1]``."""
 
-    camera: TiledCamera = env.scene[sensor_cfg.name]
+    camera: TiledCamera | MultiMeshRayCasterCamera = env.scene[sensor_cfg.name]
     depth = camera.data.output["distance_to_image_plane"].clone()
     if depth.ndim == 3:
         depth = depth.unsqueeze(-1)

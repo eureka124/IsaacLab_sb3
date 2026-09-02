@@ -14,6 +14,11 @@ import signal
 import sys
 from pathlib import Path
 
+# Isaac Lab v2.3.2 requires Warp APIs newer than the copy bundled with this
+# Isaac Sim installation.  Import the environment's Warp before AppLauncher so
+# omni.warp.core reuses it instead of putting its bundled 1.8.2 copy first.
+import warp  # noqa: F401
+
 from isaaclab.app import AppLauncher
 
 # add argparse arguments

@@ -12,7 +12,8 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import ContactSensorCfg, TiledCameraCfg
+from isaaclab.sensors import ContactSensorCfg, MultiMeshRayCasterCameraCfg
+from isaaclab.sensors.ray_caster import patterns
 from isaaclab.utils import configclass
 
 from tutorial.assets.hummingbird import HUMMINGBIRD_CFG
@@ -27,7 +28,6 @@ from .layouts import (
     RANDOM_CYLINDER_SPECS,
     WALL_THICKNESS,
 )
-
 
 # Per-policy-step weights. ``set_direct_tutorial_reward_weights`` compensates
 # for RewardManager's automatic multiplication by the policy step duration.
@@ -128,19 +128,35 @@ class TrainingMazesSceneCfg(InteractiveSceneCfg):
         }
     )
 
-    camera = TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/base_link/front_cam",
+    camera = MultiMeshRayCasterCameraCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/base_link",
         update_period=0.04,
-        height=48,
-        width=64,
+        mesh_prim_paths=[
+            MultiMeshRayCasterCameraCfg.RaycastTargetCfg(
+                prim_expr=f"{{ENV_REGEX_NS}}/{name}",
+                is_shared=True,
+                track_mesh_transforms=True,
+            )
+            for name in (
+                "Floor",
+                "BoundaryNorth",
+                "BoundarySouth",
+                "BoundaryEast",
+                "BoundaryWest",
+                "InnerWall_.*",
+                "RandomCylinder_.*",
+            )
+        ],
         data_types=["distance_to_image_plane"],
-        spawn=sim_utils.PinholeCameraCfg(
+        max_distance=CAMERA_MAX_DISTANCE,
+        depth_clipping_behavior="max",
+        pattern_cfg=patterns.PinholeCameraPatternCfg(
             focal_length=10.4775,
-            focus_distance=10.0,
             horizontal_aperture=20.955,
-            clipping_range=(0.1, CAMERA_MAX_DISTANCE),
+            height=48,
+            width=64,
         ),
-        offset=TiledCameraCfg.OffsetCfg(
+        offset=MultiMeshRayCasterCameraCfg.OffsetCfg(
             pos=(0.0, 0.0, -1.0),
             rot=(0.5, -0.5, 0.5, -0.5),
             convention="ros",
@@ -295,7 +311,7 @@ class TrainingMazesEnvCfg(ManagerBasedRLEnvCfg):
         self.episode_length_s = 40.0
         self.sim.dt = 1.0 / 120.0
         self.sim.render_interval = self.decimation
-        self.sim.physx.enable_external_forces_every_iteration = False
+        self.sim.physx.gpu_found_lost_pairs_capacity = 2**23
         mdp.set_direct_tutorial_reward_weights(
             self.rewards,
             self.decimation * self.sim.dt,

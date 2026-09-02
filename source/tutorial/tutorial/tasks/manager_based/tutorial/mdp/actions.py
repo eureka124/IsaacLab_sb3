@@ -83,9 +83,7 @@ class VelocityYawAction(ActionTerm):
         )
         forward = forward / (torch.norm(forward, dim=-1, keepdim=True) + 1.0e-6)
         side = torch.stack((-forward[:, 1], forward[:, 0]), dim=-1)
-        target_velocity_xy = (
-            forward * self._processed_actions[:, 0:1] + side * self._processed_actions[:, 1:2]
-        )
+        target_velocity_xy = forward * self._processed_actions[:, 0:1] + side * self._processed_actions[:, 1:2]
 
         physics_dt = self._env.physics_dt
         self._target_pos_setpoint[:, :2] += target_velocity_xy * physics_dt
@@ -109,7 +107,7 @@ class VelocityYawAction(ActionTerm):
         forces = torch.zeros(self.num_envs, 1, 3, device=self.device)
         forces[:, 0, 2] = command[:, 0]
         torques = command[:, 1:4].unsqueeze(1)
-        self._asset.set_external_force_and_torque(
+        self._asset.permanent_wrench_composer.set_forces_and_torques(
             forces,
             torques,
             body_ids=self._base_link_ids,
