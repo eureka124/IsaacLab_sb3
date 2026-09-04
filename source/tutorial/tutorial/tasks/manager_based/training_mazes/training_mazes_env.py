@@ -19,6 +19,7 @@ class TrainingMazesEnv(TutorialManagerEnv):
         success = self.termination_manager.get_term("goal_reached").clone()
         collided = self.termination_manager.get_term("collision").clone()
         time_out = self.termination_manager.get_term("time_out").clone()
+        isolation_boundary = self.termination_manager.get_term("isolation_boundary").clone()
 
         # Do not mutate the environment's shared extras dictionary in place.
         extras = dict(extras)
@@ -26,4 +27,5 @@ class TrainingMazesEnv(TutorialManagerEnv):
         extras["is_success"] = success  # Stable-Baselines3 convention.
         extras["collided"] = collided
         extras["time_out"] = time_out
+        extras["isolation_boundary"] = isolation_boundary
         return observations, rewards, terminated, truncated, extras

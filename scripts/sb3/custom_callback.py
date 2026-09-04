@@ -81,13 +81,12 @@ class CheckpointCallbackWithLimit(CheckpointCallback):
 
 class IsaacLogCallback(BaseCallback):
     """
-    A custom callback that logs Isaac Lab specific metrics (success, collision, timeout)
+    A custom callback that logs Isaac Lab outcome and curriculum metrics
     to TensorBoard.
 
     It accumulates per-environment terminal flags and logs the rates after at
     least ``log_freq`` completed episodes. Every done episode contributes to the
-    denominator, including boundary failures that are not one of the three
-    requested outcome categories.
+    denominator, including terminal reasons that are not explicitly tracked.
     """
 
     def __init__(self, log_freq: int = 1000, verbose=0):
@@ -121,6 +120,7 @@ class IsaacLogCallback(BaseCallback):
                 timeout=self._as_bool(
                     info.get("time_out", info.get("TimeLimit.truncated", False))
                 ),
+                isolation_boundary=self._as_bool(info.get("isolation_boundary", False)),
             )
 
         if self.outcomes.ready:
@@ -128,7 +128,20 @@ class IsaacLogCallback(BaseCallback):
             self.logger.record("Metrics/Success_Rate", rates["success_rate"])
             self.logger.record("Metrics/Collision_Rate", rates["collision_rate"])
             self.logger.record("Metrics/Timeout_Rate", rates["timeout_rate"])
+            self.logger.record(
+                "Metrics/Isolation_Boundary_Rate",
+                rates["isolation_boundary_rate"],
+            )
             self.logger.record("Metrics/Episodes", rates["episodes"])
+            raw_env = self.training_env.unwrapped
+            curriculum_metrics = {
+                "Metrics/Curriculum_Stage": "training_curriculum_stage",
+                "Metrics/Active_Mazes": "training_curriculum_maze_count",
+                "Metrics/Active_Cylinders": "training_curriculum_cylinder_count",
+            }
+            for metric_name, attribute_name in curriculum_metrics.items():
+                if hasattr(raw_env, attribute_name):
+                    self.logger.record(metric_name, float(getattr(raw_env, attribute_name)))
 
         return True
 

@@ -2,13 +2,33 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
 
 from isaaclab_rl.sb3 import Sb3VecEnvWrapper as _IsaacLabSb3VecEnvWrapper
-from isaaclab_rl.sb3 import process_sb3_cfg
+from isaaclab_rl.sb3 import process_sb3_cfg as _process_sb3_cfg
+
+
+def process_sb3_cfg(cfg: dict, num_envs: int) -> dict:
+    """Process SB3 settings while allowing YAML ``null`` to disable value clipping."""
+
+    cfg = dict(cfg)
+    if cfg.get("clip_range_vf", ...) is None:
+        cfg.pop("clip_range_vf")
+    return _process_sb3_cfg(cfg, num_envs)
+
+
+def vecnormalize_path_for_checkpoint(checkpoint_path: str | Path) -> Path:
+    """Return the VecNormalize sidecar path used by SB3's checkpoint callback."""
+
+    checkpoint_path = Path(checkpoint_path)
+    if not checkpoint_path.name.startswith("model"):
+        raise ValueError(f"Expected a model checkpoint filename, got {checkpoint_path.name!r}.")
+    sidecar_name = checkpoint_path.name.replace("model", "model_vecnormalize", 1)
+    return checkpoint_path.with_name(Path(sidecar_name).with_suffix(".pkl").name)
 
 
 class Sb3VecEnvWrapper(_IsaacLabSb3VecEnvWrapper):
@@ -22,7 +42,13 @@ class Sb3VecEnvWrapper(_IsaacLabSb3VecEnvWrapper):
     normal GPU-side rollout path is otherwise unchanged.
     """
 
-    _TERMINAL_METRIC_KEYS = ("success", "is_success", "collided", "time_out")
+    _TERMINAL_METRIC_KEYS = (
+        "success",
+        "is_success",
+        "collided",
+        "time_out",
+        "isolation_boundary",
+    )
 
     @staticmethod
     def _to_host_scalar(value: Any) -> Any:
@@ -50,4 +76,4 @@ class Sb3VecEnvWrapper(_IsaacLabSb3VecEnvWrapper):
         return infos
 
 
-__all__ = ["Sb3VecEnvWrapper", "process_sb3_cfg"]
+__all__ = ["Sb3VecEnvWrapper", "process_sb3_cfg", "vecnormalize_path_for_checkpoint"]

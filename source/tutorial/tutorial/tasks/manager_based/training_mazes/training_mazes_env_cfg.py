@@ -281,6 +281,10 @@ class TrainingMazesEnvCfg(ManagerBasedRLEnvCfg):
     # Aggregate transitions across all parallel environments. Training scripts
     # overwrite this from the active agent configuration.
     contact_force_penalty_max_steps: int = 70_000_000
+    training_curriculum_max_steps: int = 70_000_000
+    training_curriculum_stage_fractions: tuple[float, ...] = (0.0, 0.10, 0.25, 0.50, 0.75)
+    training_curriculum_maze_counts: tuple[int, ...] = (1, 6, 6, 6, 6)
+    training_curriculum_cylinder_counts: tuple[int, ...] = (0, 0, 10, 30, 60)
 
     # Save one bundle/preview per maze type (six files of each kind), never per cloned drone.
     save_global_toa_maps: bool = True

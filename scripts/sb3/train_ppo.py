@@ -38,7 +38,12 @@ parser.add_argument("--agent", type=str, default="sb3_cfg_entry_point",help="Nam
 )
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--log_interval", type=int, default=50000, help="Log data every n timesteps.")
-parser.add_argument("--checkpoint_interval", type=int,default=20000, help="Interval between checkpoints (in steps).",)
+parser.add_argument(
+    "--checkpoint_interval",
+    type=int,
+    default=5_000_000,
+    help="Approximate interval between checkpoints in aggregate environment transitions.",
+)
 parser.add_argument("--checkpoint", type=str, default=None, help="Continue the training from checkpoint.",
 )
 parser.add_argument("--wandb", action="store_true",
@@ -104,7 +109,6 @@ signal.signal(signal.SIGINT, cleanup_pbar)
 
 import gymnasium as gym
 import logging
-import numpy as np
 import os
 import random
 import time
@@ -154,7 +158,7 @@ from isaaclab.envs import (
 from isaaclab.utils.dict import print_dict
 from isaaclab.utils.io import dump_yaml
 
-from isaaclab_rl.sb3 import Sb3VecEnvWrapper, process_sb3_cfg
+from sb3_compat import Sb3VecEnvWrapper, process_sb3_cfg, vecnormalize_path_for_checkpoint
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils.hydra import hydra_task_config
@@ -172,7 +176,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         args_cli.seed = random.randint(0, 10000)
 
     # override configurations with non-hydra CLI arguments
-    env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
+    configured_num_envs = agent_cfg.get("num_envs", env_cfg.scene.num_envs)
+    env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else int(configured_num_envs)
+    agent_cfg["num_envs"] = env_cfg.scene.num_envs
     agent_cfg["seed"] = args_cli.seed if args_cli.seed is not None else agent_cfg["seed"]
     # max iterations for training
     if args_cli.max_iterations is not None:
@@ -182,6 +188,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # horizon, including command-line --max_iterations overrides.
     if hasattr(env_cfg, "contact_force_penalty_max_steps"):
         env_cfg.contact_force_penalty_max_steps = int(agent_cfg["n_timesteps"])
+    if hasattr(env_cfg, "training_curriculum_max_steps"):
+        env_cfg.training_curriculum_max_steps = int(agent_cfg["n_timesteps"])
 
     # set the environment seed
     # note: certain randomizations occur in the environment initialization so we set the seed here
@@ -208,6 +216,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # read configurations about the agent-training
     policy_arch = agent_cfg.pop("policy")
     n_timesteps = agent_cfg.pop("n_timesteps")
+    agent_cfg.pop("num_envs", None)
 
     # set the IO descriptors export flag if requested
     if isinstance(env_cfg, ManagerBasedRLEnvCfg):
@@ -240,26 +249,41 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     start_time = time.time()
 
     # wrap around environment for stable baselines
-    # Force fast_variant=False to ensure we get 'success', 'collided', 'time_out' in infos for logging
+    # Keep terminal outcome metadata in infos for logging.
     env = Sb3VecEnvWrapper(env, fast_variant=False)
 
-    norm_keys = {"normalize_input", "normalize_value", "clip_obs"}
+    norm_keys = {"normalize_input", "normalize_value", "clip_obs", "clip_reward"}
     norm_args = {}
     for key in norm_keys:
         if key in agent_cfg:
             norm_args[key] = agent_cfg.pop(key)
 
-    if norm_args and norm_args.get("normalize_input"):
-        print(f"Normalizing input, {norm_args=}")
-        env = VecNormalize(
-            env,
-            training=True,
-            norm_obs=norm_args["normalize_input"],
-            norm_reward=norm_args.get("normalize_value", False),
-            clip_obs=norm_args.get("clip_obs", 100.0),
-            gamma=agent_cfg["gamma"],
-            clip_reward=np.inf,
+    normalize_input = bool(norm_args.get("normalize_input", False))
+    normalize_value = bool(norm_args.get("normalize_value", False))
+    if normalize_input or normalize_value:
+        vecnormalize_path = (
+            vecnormalize_path_for_checkpoint(args_cli.checkpoint)
+            if args_cli.checkpoint is not None
+            else None
         )
+        if vecnormalize_path is not None and vecnormalize_path.exists():
+            print(f"Loading saved normalization: {vecnormalize_path}")
+            env = VecNormalize.load(vecnormalize_path, env)
+            env.training = True
+            env.norm_reward = normalize_value
+        else:
+            if vecnormalize_path is not None:
+                logger.warning("No VecNormalize sidecar found at %s; starting fresh statistics.", vecnormalize_path)
+            print(f"Normalizing environment, {norm_args=}")
+            env = VecNormalize(
+                env,
+                training=True,
+                norm_obs=normalize_input,
+                norm_reward=normalize_value,
+                clip_obs=norm_args.get("clip_obs", 100.0),
+                gamma=agent_cfg["gamma"],
+                clip_reward=norm_args.get("clip_reward", 10.0),
+            )
 
     # create agent from stable baselines
     # Modify policy_kwargs to include custom features extractor
@@ -271,8 +295,18 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     agent_cfg["policy_kwargs"] = policy_kwargs
 
     agent = PPO(policy_arch, env, verbose=1, tensorboard_log=log_dir, **agent_cfg)
+    reset_num_timesteps = True
+    learn_timesteps = int(n_timesteps)
     if args_cli.checkpoint is not None:
         agent = agent.load(args_cli.checkpoint, env, print_system_info=True)
+        completed_timesteps = int(agent.num_timesteps)
+        learn_timesteps = max(int(n_timesteps) - completed_timesteps, 0)
+        reset_num_timesteps = False
+        env.unwrapped.common_step_counter = completed_timesteps // env.num_envs
+        print(
+            f"[INFO] Resuming from {completed_timesteps} transitions; "
+            f"{learn_timesteps} transitions remain."
+        )
 
     # wandb logging
     if args_cli.wandb:
@@ -289,10 +323,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         )
 
     # callbacks for agent
+    checkpoint_save_freq = max(args_cli.checkpoint_interval // env.num_envs, 1)
+    print(
+        f"[INFO] Saving checkpoints every {checkpoint_save_freq} vector steps "
+        f"(~{checkpoint_save_freq * env.num_envs} transitions)."
+    )
     checkpoint_callback = CheckpointCallbackWithLimit(
-        save_freq=args_cli.checkpoint_interval,
+        save_freq=checkpoint_save_freq,
         save_path=log_dir,
         name_prefix="model",
+        save_vecnormalize=isinstance(env, VecNormalize),
         verbose=2,
         max_keep=20,
     )
@@ -311,13 +351,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         )
 
     # train the agent
-    with contextlib.suppress(KeyboardInterrupt):
-        agent.learn(
-            total_timesteps=n_timesteps,
-            callback=callbacks,
-            progress_bar=False,
-            log_interval=None,
-        )
+    if learn_timesteps > 0:
+        with contextlib.suppress(KeyboardInterrupt):
+            agent.learn(
+                total_timesteps=learn_timesteps,
+                callback=callbacks,
+                progress_bar=False,
+                log_interval=None,
+                reset_num_timesteps=reset_num_timesteps,
+            )
+    else:
+        logger.warning("Checkpoint already reached the configured training horizon; skipping learn().")
     # save the final model
     agent.save(os.path.join(log_dir, "model"))
     if args_cli.wandb:

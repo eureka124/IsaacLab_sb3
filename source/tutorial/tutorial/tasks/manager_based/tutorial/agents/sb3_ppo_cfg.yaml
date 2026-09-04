@@ -5,27 +5,33 @@ verbose: 1
 sb3_wrapper_fast_variant: false
 checkpoint_max_keep: 20
 episode_metrics_log_freq: 100
+num_envs: 4096
+
+# Normalize rewards while preserving the task's already normalized image/TOA observations.
+normalize_input: false
+normalize_value: true
+clip_reward: 10.0
 
 n_timesteps: !!float 7e7
 policy: "MultiInputLstmPolicy"
-n_steps: 512
+n_steps: 256
 batch_size: 512
 gae_lambda: 0.95
 gamma: 0.99
 n_epochs: 5
-ent_coef: 0.01
+ent_coef: 0.001
 learning_rate: !!float 3e-4
 clip_range: !!float 0.2
-clip_range_vf: !!float 0.2
+clip_range_vf: null
 policy_kwargs:
   activation_fn: nn.LeakyReLU
   share_features_extractor: false
   net_arch:
-    pi: [256, 256]
-    vf: [256, 256]
-  lstm_hidden_size: 128
+    pi: [512, 512]
+    vf: [512, 512]
+  lstm_hidden_size: 256
   squash_output: False
-  log_std_init: 0.0
-vf_coef: 2.0
+  log_std_init: -1.0
+vf_coef: 0.5
 max_grad_norm: 1.0
 device: "cuda:0"

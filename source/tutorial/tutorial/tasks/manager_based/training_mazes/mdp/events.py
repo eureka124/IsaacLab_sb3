@@ -1,4 +1,4 @@
-"""Reset events for the six-way vectorized training-maze task."""
+"""Reset events for the curriculum-controlled vectorized training-maze task."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import torch
 
 from isaaclab.assets import Articulation, RigidObject, RigidObjectCollection
 
+from ..curriculum import select_training_maze_curriculum_stage
 from ..layouts import (
     ARENA_HALF_EXTENT,
     ARENA_HEIGHT,
@@ -76,13 +77,18 @@ def _sample_random_cylinder_positions(
     selected_wall_xy: torch.Tensor,
     selected_wall_yaw: torch.Tensor,
     selected_wall_active: torch.Tensor,
+    cylinder_count: int,
 ) -> torch.Tensor:
-    """Sample non-overlapping local XY positions for every fixed cylinder slot."""
+    """Sample non-overlapping local XY positions for the active cylinder prefix."""
 
     radii, _ = _get_random_cylinder_specs(env)
+    if not 0 <= cylinder_count <= RANDOM_CYLINDER_COUNT:
+        raise ValueError(
+            f"cylinder_count must be in [0, {RANDOM_CYLINDER_COUNT}], got {cylinder_count}."
+        )
     num_resets = env_ids.numel()
     positions = torch.empty(
-        (num_resets, RANDOM_CYLINDER_COUNT, 2), device=env.device, dtype=selected_wall_xy.dtype
+        (num_resets, cylinder_count, 2), device=env.device, dtype=selected_wall_xy.dtype
     )
 
     vertical = torch.isclose(
@@ -102,7 +108,7 @@ def _sample_random_cylinder_positions(
         torch.full_like(selected_wall_yaw, WALL_THICKNESS * 0.5),
     )
 
-    for cylinder_index in range(RANDOM_CYLINDER_COUNT):
+    for cylinder_index in range(cylinder_count):
         radius = radii[cylinder_index]
         center_limit = ARENA_HALF_EXTENT - WALL_THICKNESS * 0.5 - radius - RANDOM_CYLINDER_CLEARANCE
         unresolved = torch.ones(num_resets, dtype=torch.bool, device=env.device)
@@ -159,7 +165,7 @@ def _write_random_cylinders(
     origins: torch.Tensor,
     local_positions: torch.Tensor,
 ) -> None:
-    """Write randomized positions while keeping every cylinder's geometry fixed."""
+    """Write active cylinders and park all inactive cylinder slots below the floor."""
 
     cylinders: RigidObjectCollection = env.scene["random_cylinders"]
     expected_names = [f"cylinder_{index:02d}" for index in range(RANDOM_CYLINDER_COUNT)]
@@ -169,10 +175,19 @@ def _write_random_cylinders(
             f"{cylinders.object_names}."
         )
 
+    cylinder_count = local_positions.shape[1]
+    if not 0 <= cylinder_count <= RANDOM_CYLINDER_COUNT:
+        raise ValueError(
+            f"Active cylinder count must be in [0, {RANDOM_CYLINDER_COUNT}], got {cylinder_count}."
+        )
+
     _, heights = _get_random_cylinder_specs(env)
     pose = cylinders.data.default_object_state[env_ids, :, :7].clone()
-    pose[:, :, :2] = origins[:, None, :2] + local_positions
-    pose[:, :, 2] = heights.unsqueeze(0) * 0.5
+    pose[:, :, :2] = origins[:, None, :2]
+    pose[:, :, 2] = -10.0
+    if cylinder_count > 0:
+        pose[:, :cylinder_count, :2] = origins[:, None, :2] + local_positions
+        pose[:, :cylinder_count, 2] = heights[:cylinder_count].unsqueeze(0) * 0.5
     cylinders.write_object_pose_to_sim(pose, env_ids=env_ids)
     cylinders.write_object_velocity_to_sim(
         torch.zeros(
@@ -185,10 +200,11 @@ def _write_random_cylinders(
 
 
 def reset_training_maze(env, env_ids: torch.Tensor) -> None:
-    """Reset drones and assign maze ``env_id % 6`` with randomized route direction.
+    """Reset drones and assign the active curriculum's mazes and obstacles.
 
-    Each cloned environment owns one drone.  A reset samples one of the two
-    start/goal pairs and swaps its direction with probability 0.5.
+    Each cloned environment owns one drone. A reset samples one of the two
+    start/goal pairs, swaps its direction with probability 0.5, and activates
+    the current curriculum stage's prefix of randomized cylinders.
     """
 
     env_ids = env_ids.to(device=env.device, dtype=torch.long)
@@ -197,7 +213,28 @@ def reset_training_maze(env, env_ids: torch.Tensor) -> None:
 
     robot: Articulation = env.scene["robot"]
     wall_xy, wall_yaw, wall_active, starts, goals = _get_layout_tensors(env)
-    maze_ids = torch.remainder(env_ids, len(MAZE_LAYOUTS))
+    curriculum_stage = select_training_maze_curriculum_stage(
+        elapsed_steps=int(env.common_step_counter * env.num_envs),
+        max_steps=int(env.cfg.training_curriculum_max_steps),
+        stage_fractions=env.cfg.training_curriculum_stage_fractions,
+        maze_counts=env.cfg.training_curriculum_maze_counts,
+        cylinder_counts=env.cfg.training_curriculum_cylinder_counts,
+    )
+    if curriculum_stage.maze_count > len(MAZE_LAYOUTS):
+        raise ValueError(
+            f"Curriculum enables {curriculum_stage.maze_count} mazes, but only "
+            f"{len(MAZE_LAYOUTS)} are defined."
+        )
+    if curriculum_stage.cylinder_count > RANDOM_CYLINDER_COUNT:
+        raise ValueError(
+            f"Curriculum enables {curriculum_stage.cylinder_count} cylinders, but only "
+            f"{RANDOM_CYLINDER_COUNT} are defined."
+        )
+
+    env.training_curriculum_stage = curriculum_stage.index
+    env.training_curriculum_maze_count = curriculum_stage.maze_count
+    env.training_curriculum_cylinder_count = curriculum_stage.cylinder_count
+    maze_ids = torch.remainder(env_ids, curriculum_stage.maze_count)
     pair_ids = torch.randint(0, 2, (env_ids.numel(),), device=env.device)
     reverse = torch.rand(env_ids.numel(), device=env.device) < 0.5
 
@@ -251,6 +288,7 @@ def reset_training_maze(env, env_ids: torch.Tensor) -> None:
         selected_wall_xy,
         selected_wall_yaw,
         selected_wall_active,
+        curriculum_stage.cylinder_count,
     )
     for wall_index in range(MAX_INNER_WALLS):
         wall: RigidObject = env.scene[f"inner_wall_{wall_index}"]
